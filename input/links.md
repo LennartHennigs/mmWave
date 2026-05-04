@@ -5,6 +5,7 @@
 - XIAO ESP32-C6 + MR60BHA2
 - [Intro Page](https://wiki.seeedstudio.com/getting_started_with_mr60bha2_mmwave_kit/)
 - [mmWave Arduino lib](https://github.com/Love4yzp/Seeed-mmWave-library)
+- [ESP32-C6](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/)
 
 ## Optional
 
