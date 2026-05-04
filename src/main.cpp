@@ -15,30 +15,24 @@
   #define LOG(...) do {} while(0)
 #endif
 
-// Sensor — UART0, matches official Seeed example pattern for ESP32
+// UART0 for sensor; Serial maps to USB CDC via ARDUINO_USB_CDC_ON_BOOT — no conflict
 HardwareSerial  mmWaveSerial(0);
 SEEED_MR60BHA2  mmWave;
 
-// Web server + WebSocket
 AsyncWebServer  server(80);
 AsyncWebSocket  ws("/ws");
 
-// MQTT
 WiFiClient   wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-// Sensor readings
 static float breathingRate = 0.0f;
 static float heartRate     = 0.0f;
-static float sensorDist    = 0.0f;
 static bool  presence      = false;
 
-static unsigned long lastWsPush  = 0;
-static unsigned long lastMqttPub = 0;
+static unsigned long lastWsPush      = 0;
+static unsigned long lastMqttPub     = 0;
+static unsigned long lastMqttAttempt = 0;
 
-// ---------------------------------------------------------------------------
-// Inline HTML — stored in flash via PROGMEM
-// ---------------------------------------------------------------------------
 static const char INDEX_HTML[] PROGMEM = R"html(
 <!DOCTYPE html>
 <html lang="en">
@@ -116,48 +110,51 @@ void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
 }
 
 // ---------------------------------------------------------------------------
-// MQTT
+// MQTT HA auto-discovery
 // ---------------------------------------------------------------------------
-void publishHaDiscovery() {
+struct HaEntity {
+  const char* entityType;
+  const char* slug;
+  const char* name;
+  const char* valueTpl;
+  const char* unit;        // NULL for binary_sensor
+  const char* uniqueSuffix;
+};
+
+void publishEntity(const HaEntity& e) {
   char topic[128];
   char payload[384];
-
-  snprintf(topic, sizeof(topic), "%s/sensor/%s_breathing_rate/config",
-           MQTT_HA_PREFIX, MQTT_TOPIC_PREFIX);
-  snprintf(payload, sizeof(payload),
-           "{\"name\":\"Breathing Rate\","
-           "\"state_topic\":\"%s/sensor/state\","
-           "\"value_template\":\"{{value_json.breathing_rate}}\","
-           "\"unit_of_measurement\":\"rpm\","
-           "\"unique_id\":\"%s_br\","
-           "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-           MQTT_TOPIC_PREFIX, MQTT_TOPIC_PREFIX, DEVICE_NAME, DEVICE_NAME);
+  snprintf(topic, sizeof(topic), "%s/%s/%s_%s/config",
+           MQTT_HA_PREFIX, e.entityType, MQTT_TOPIC_PREFIX, e.slug);
+  if (e.unit && e.unit[0]) {
+    snprintf(payload, sizeof(payload),
+             "{\"name\":\"%s\",\"state_topic\":\"%s/sensor/state\","
+             "\"value_template\":\"%s\",\"unit_of_measurement\":\"%s\","
+             "\"unique_id\":\"%s_%s\","
+             "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+             e.name, MQTT_TOPIC_PREFIX, e.valueTpl, e.unit,
+             MQTT_TOPIC_PREFIX, e.uniqueSuffix, DEVICE_NAME, DEVICE_NAME);
+  } else {
+    snprintf(payload, sizeof(payload),
+             "{\"name\":\"%s\",\"state_topic\":\"%s/sensor/state\","
+             "\"value_template\":\"%s\","
+             "\"unique_id\":\"%s_%s\","
+             "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
+             e.name, MQTT_TOPIC_PREFIX, e.valueTpl,
+             MQTT_TOPIC_PREFIX, e.uniqueSuffix, DEVICE_NAME, DEVICE_NAME);
+  }
   mqttClient.publish(topic, payload, true);
+}
 
-  snprintf(topic, sizeof(topic), "%s/sensor/%s_heart_rate/config",
-           MQTT_HA_PREFIX, MQTT_TOPIC_PREFIX);
-  snprintf(payload, sizeof(payload),
-           "{\"name\":\"Heart Rate\","
-           "\"state_topic\":\"%s/sensor/state\","
-           "\"value_template\":\"{{value_json.heart_rate}}\","
-           "\"unit_of_measurement\":\"bpm\","
-           "\"unique_id\":\"%s_hr\","
-           "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-           MQTT_TOPIC_PREFIX, MQTT_TOPIC_PREFIX, DEVICE_NAME, DEVICE_NAME);
-  mqttClient.publish(topic, payload, true);
-
-  snprintf(topic, sizeof(topic), "%s/binary_sensor/%s_presence/config",
-           MQTT_HA_PREFIX, MQTT_TOPIC_PREFIX);
-  snprintf(payload, sizeof(payload),
-           "{\"name\":\"Presence\","
-           "\"state_topic\":\"%s/sensor/state\","
-           "\"value_template\":\"{{value_json.presence}}\","
-           "\"payload_on\":true,\"payload_off\":false,"
-           "\"unique_id\":\"%s_presence\","
-           "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\"}}",
-           MQTT_TOPIC_PREFIX, MQTT_TOPIC_PREFIX, DEVICE_NAME, DEVICE_NAME);
-  mqttClient.publish(topic, payload, true);
-
+void publishHaDiscovery() {
+  static const HaEntity entities[] = {
+    {"sensor",        "breathing_rate", "Breathing Rate", "{{value_json.breathing_rate}}", "rpm", "br"},
+    {"sensor",        "heart_rate",     "Heart Rate",     "{{value_json.heart_rate}}",     "bpm", "hr"},
+    {"binary_sensor", "presence",       "Presence",       "{{value_json.presence}}",       NULL,  "presence"},
+  };
+  for (uint8_t i = 0; i < sizeof(entities) / sizeof(entities[0]); i++) {
+    publishEntity(entities[i]);
+  }
   LOG("HA discovery published");
 }
 
@@ -192,7 +189,7 @@ void connectWifi() {
   LOG("WiFi failed, starting captive portal AP: %s", DEVICE_NAME);
   WiFiManager wm;
   wm.setConfigPortalTimeout(180);
-  if (!wm.startConfigPortal(DEVICE_NAME, "mmwave1234")) {
+  if (!wm.startConfigPortal(DEVICE_NAME, WIFI_AP_PASSWORD)) {
     LOG("Portal timed out, restarting");
     ESP.restart();
   }
@@ -230,37 +227,41 @@ void setup() {
 }
 
 void loop() {
-  if (mmWave.update(100)) {
+  if (mmWave.update(0)) {
+    float dist;
     mmWave.getBreathRate(breathingRate);
     mmWave.getHeartRate(heartRate);
-    presence = mmWave.getDistance(sensorDist);
-    LOG("br=%.1f hr=%.1f dist=%.1f presence=%d",
-        breathingRate, heartRate, sensorDist, (int)presence);
+    mmWave.getDistance(dist);
+    presence = mmWave.isHumanDetected();
+    LOG("br=%.1f hr=%.1f presence=%d", breathingRate, heartRate, (int)presence);
   }
 
   unsigned long now = millis();
 
   if (now - lastWsPush >= 1000UL) {
     lastWsPush = now;
-    char json[48];
-    snprintf(json, sizeof(json), "{\"br\":%.1f,\"hr\":%.1f}",
-             breathingRate, heartRate);
-    ws.textAll(json);
+    if (ws.count() > 0) {
+      char json[64];
+      snprintf(json, sizeof(json), "{\"br\":%.1f,\"hr\":%.1f}", breathingRate, heartRate);
+      ws.textAll(json);
+    }
   }
 
   if (now - lastMqttPub >= 5000UL) {
     lastMqttPub = now;
+    if (!mqttClient.connected() && (now - lastMqttAttempt >= 30000UL)) {
+      lastMqttAttempt = now;
+      mqttConnect();
+    }
     if (mqttClient.connected()) {
       char topic[64];
       char payload[96];
       snprintf(topic, sizeof(topic), "%s/sensor/state", MQTT_TOPIC_PREFIX);
       snprintf(payload, sizeof(payload),
-               "{\"breathing_rate\":%.1f,\"heart_rate\":%.1f,\"presence\":%s}",
-               breathingRate, heartRate, presence ? "true" : "false");
+               "{\"breathing_rate\":%.1f,\"heart_rate\":%.1f,\"presence\":\"%s\"}",
+               breathingRate, heartRate, presence ? "ON" : "OFF");
       mqttClient.publish(topic, payload);
       LOG("MQTT state: %s", payload);
-    } else {
-      mqttConnect();
     }
   }
 

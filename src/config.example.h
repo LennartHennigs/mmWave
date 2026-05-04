@@ -22,5 +22,8 @@
 // Device name: used as mDNS hostname, MQTT client ID, and AP SSID fallback
 #define DEVICE_NAME       "mmwave"
 
+// Access Point fallback password (used when STA connection fails)
+#define WIFI_AP_PASSWORD  "mmwave1234"
+
 // Set to 1 to enable Serial debug output via USB CDC; 0 compiles it out entirely
 #define DEBUG             1
