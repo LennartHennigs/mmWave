@@ -27,3 +27,7 @@
 
 // Set to 1 to enable Serial debug output via USB CDC; 0 compiles it out entirely
 #define DEBUG             1
+
+// Feature flags: set to 0 to exclude the feature entirely from the build
+#define ENABLE_WEBSERVER  1   // AsyncWebServer + WebSocket dashboard on port 80
+#define ENABLE_MQTT       1   // MQTT publishing + Home Assistant auto-discovery

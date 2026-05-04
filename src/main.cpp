@@ -1,13 +1,19 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESPmDNS.h>
 #include <WiFiManager.h>
-#include <PubSubClient.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
 #include <HardwareSerial.h>
 #include "Seeed_Arduino_mmWave.h"
 #include "config.h"
+
+#if ENABLE_WEBSERVER
+  #include <ESPmDNS.h>
+  #include <AsyncTCP.h>
+  #include <ESPAsyncWebServer.h>
+#endif
+
+#if ENABLE_MQTT
+  #include <PubSubClient.h>
+#endif
 
 #if DEBUG
   #define LOG(fmt, ...) Serial.printf("[DBG] " fmt "\n", ##__VA_ARGS__)
@@ -19,19 +25,27 @@
 HardwareSerial  mmWaveSerial(0);
 SEEED_MR60BHA2  mmWave;
 
+#if ENABLE_WEBSERVER
 AsyncWebServer  server(80);
 AsyncWebSocket  ws("/ws");
+static unsigned long lastWsPush = 0;
+#endif
 
+#if ENABLE_MQTT
 WiFiClient   wifiClient;
 PubSubClient mqttClient(wifiClient);
+static unsigned long lastMqttPub     = 0;
+static unsigned long lastMqttAttempt = 0;
+#endif
 
 static float breathingRate = 0.0f;
 static float heartRate     = 0.0f;
 static bool  presence      = false;
 
-static unsigned long lastWsPush      = 0;
-static unsigned long lastMqttPub     = 0;
-static unsigned long lastMqttAttempt = 0;
+// ---------------------------------------------------------------------------
+// Web server + WebSocket
+// ---------------------------------------------------------------------------
+#if ENABLE_WEBSERVER
 
 static const char INDEX_HTML[] PROGMEM = R"html(
 <!DOCTYPE html>
@@ -98,9 +112,6 @@ static const char INDEX_HTML[] PROGMEM = R"html(
 </html>
 )html";
 
-// ---------------------------------------------------------------------------
-// WebSocket
-// ---------------------------------------------------------------------------
 void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
                AwsEventType type, void*, uint8_t*, size_t) {
   if (type == WS_EVT_CONNECT)
@@ -109,9 +120,13 @@ void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
     LOG("WS client #%u disconnected", client->id());
 }
 
+#endif // ENABLE_WEBSERVER
+
 // ---------------------------------------------------------------------------
 // MQTT HA auto-discovery
 // ---------------------------------------------------------------------------
+#if ENABLE_MQTT
+
 struct HaEntity {
   const char* entityType;
   const char* slug;
@@ -172,6 +187,8 @@ void mqttConnect() {
   }
 }
 
+#endif // ENABLE_MQTT
+
 // ---------------------------------------------------------------------------
 // WiFi — try config.h creds, fall back to captive portal
 // ---------------------------------------------------------------------------
@@ -207,6 +224,7 @@ void setup() {
 
   connectWifi();
 
+#if ENABLE_WEBSERVER
   if (!MDNS.begin(DEVICE_NAME)) {
     LOG("mDNS failed");
   } else {
@@ -220,10 +238,13 @@ void setup() {
   });
   server.begin();
   LOG("Web server started on port 80");
+#endif
 
+#if ENABLE_MQTT
   mqttClient.setBufferSize(512);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttConnect();
+#endif
 }
 
 void loop() {
@@ -238,6 +259,7 @@ void loop() {
 
   unsigned long now = millis();
 
+#if ENABLE_WEBSERVER
   if (now - lastWsPush >= 1000UL) {
     lastWsPush = now;
     if (ws.count() > 0) {
@@ -246,7 +268,10 @@ void loop() {
       ws.textAll(json);
     }
   }
+  ws.cleanupClients();
+#endif
 
+#if ENABLE_MQTT
   if (now - lastMqttPub >= 5000UL) {
     lastMqttPub = now;
     if (!mqttClient.connected() && (now - lastMqttAttempt >= 30000UL)) {
@@ -264,7 +289,6 @@ void loop() {
       LOG("MQTT state: %s", payload);
     }
   }
-
   mqttClient.loop();
-  ws.cleanupClients();
+#endif
 }
