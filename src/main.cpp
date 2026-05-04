@@ -4,22 +4,45 @@
 #include <HardwareSerial.h>
 #include "Seeed_Arduino_mmWave.h"
 #include "config.h"
+#include <ESPTelnet.h>
+
+#if ENABLE_WEBSERVER || ENABLE_OTA
+  #include <ESPmDNS.h>
+#endif
 
 #if ENABLE_WEBSERVER
-  #include <ESPmDNS.h>
   #include <AsyncTCP.h>
   #include <ESPAsyncWebServer.h>
+#endif
+
+#if ENABLE_OTA
+  #include <ArduinoOTA.h>
 #endif
 
 #if ENABLE_MQTT
   #include <PubSubClient.h>
 #endif
 
-#if DEBUG
-  #define LOG(fmt, ...) Serial.printf("[DBG] " fmt "\n", ##__VA_ARGS__)
-#else
-  #define LOG(...) do {} while(0)
+// ---------------------------------------------------------------------------
+// Telnet + logging — always active; Serial output gated on DEBUG
+// ---------------------------------------------------------------------------
+ESPTelnet telnet;
+
+static void logPrint(const char* fmt, ...) {
+#if !DEBUG
+  if (!telnet.isConnected()) return;
 #endif
+  char buf[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, args);
+  va_end(args);
+#if DEBUG
+  Serial.print(buf);
+#endif
+  telnet.print(buf);
+}
+#define LOG(fmt, ...) logPrint("[DBG] " fmt "\n", ##__VA_ARGS__)
 
 #ifndef WIFI_AP_PASSWORD
   #define WIFI_AP_PASSWORD "mmwave1234"
@@ -228,13 +251,43 @@ void setup() {
 
   connectWifi();
 
-#if ENABLE_WEBSERVER
+  telnet.begin();
+  LOG("Telnet started on port 23");
+
+#if ENABLE_WEBSERVER || ENABLE_OTA
   if (!MDNS.begin(DEVICE_NAME)) {
     LOG("mDNS failed");
   } else {
-    LOG("mDNS started: http://%s.local", DEVICE_NAME);
+    LOG("mDNS started: %s.local", DEVICE_NAME);
   }
+#endif
 
+#if ENABLE_OTA
+  ArduinoOTA.setHostname(DEVICE_NAME);
+  if (strlen(OTA_PASSWORD) > 0) ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.setMdnsEnabled(false); // we manage mDNS ourselves
+  ArduinoOTA.onStart([]() {
+    LOG("OTA update starting");
+  });
+  ArduinoOTA.onEnd([]() {
+    LOG("OTA update done — rebooting");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    LOG("OTA %u%%", progress / (total / 100));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    const char* msg = (error == OTA_AUTH_ERROR)    ? "auth failed"    :
+                      (error == OTA_BEGIN_ERROR)   ? "begin failed"   :
+                      (error == OTA_CONNECT_ERROR) ? "connect failed" :
+                      (error == OTA_RECEIVE_ERROR) ? "receive failed" :
+                      (error == OTA_END_ERROR)     ? "end failed"     : "unknown";
+    LOG("OTA error: %s", msg);
+  });
+  ArduinoOTA.begin();
+  LOG("OTA ready");
+#endif
+
+#if ENABLE_WEBSERVER
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
@@ -252,16 +305,27 @@ void setup() {
 }
 
 void loop() {
+  telnet.loop();
+
+#if ENABLE_OTA
+  ArduinoOTA.handle();
+#endif
+
   if (mmWave.update(0)) {
     float dist;
     mmWave.getBreathRate(breathingRate);
     mmWave.getHeartRate(heartRate);
     mmWave.getDistance(dist);
     presence = mmWave.isHumanDetected();
-    LOG("br=%.1f hr=%.1f presence=%d", breathingRate, heartRate, (int)presence);
   }
 
   unsigned long now = millis();
+
+  static unsigned long lastLog = 0;
+  if (now - lastLog >= 1000UL) {
+    lastLog = now;
+    LOG("br=%.1f hr=%.1f presence=%d", breathingRate, heartRate, (int)presence);
+  }
 
 #if ENABLE_WEBSERVER
   if (now - lastWsPush >= 1000UL) {
