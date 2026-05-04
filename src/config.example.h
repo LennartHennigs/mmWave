@@ -31,3 +31,7 @@
 // Feature flags: set to 0 to exclude the feature entirely from the build
 #define ENABLE_WEBSERVER  1   // AsyncWebServer + WebSocket dashboard on port 80
 #define ENABLE_MQTT       1   // MQTT publishing + Home Assistant auto-discovery
+
+// OTA 
+#define ENABLE_OTA        1   // ArduinoOTA wireless flashing
+#define OTA_PASSWORD      ""
