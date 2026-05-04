@@ -21,6 +21,10 @@
   #define LOG(...) do {} while(0)
 #endif
 
+#ifndef WIFI_AP_PASSWORD
+  #define WIFI_AP_PASSWORD "mmwave1234"
+#endif
+
 // UART0 for sensor; Serial maps to USB CDC via ARDUINO_USB_CDC_ON_BOOT — no conflict
 HardwareSerial  mmWaveSerial(0);
 SEEED_MR60BHA2  mmWave;
@@ -234,7 +238,7 @@ void setup() {
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
-    req->send_P(200, "text/html", INDEX_HTML);
+    req->send(200, "text/html", INDEX_HTML);
   });
   server.begin();
   LOG("Web server started on port 80");
