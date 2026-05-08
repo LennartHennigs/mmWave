@@ -1,3 +1,11 @@
+/////////////////////////////////////////////////////////////////
+/*
+  Pushover.h - Minimal Pushover push notification client for ESP32.
+  Copyright (C) 2026 Lennart Hennigs.
+  Released under the MIT license.
+*/
+/////////////////////////////////////////////////////////////////
+
 #pragma once
 #include <Arduino.h>
 

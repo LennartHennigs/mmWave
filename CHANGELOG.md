@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mmWaveKit` library (`lib/mmWaveKit/`) wrapping `SEEED_MR60BHA2`, `BH1750` light sensor, and WS2812 LED with a Button2-style callback API
+- `mmWaveKit::VitalConfig` and `LightConfig` structs with sensible defaults; `ADULT` and `TODDLER` vital profiles baked into the library
+- `ENABLE_TELNET` feature flag to compile out ESPTelnet entirely
+- Light sensor lux value added to WebSocket payload, MQTT state, and web dashboard footer
+- `LIGHT_TRACK_MODE` config option to gate data tracking to dark/light/always conditions
+- `PROFILE_ADULT` / `PROFILE_TODDLER` constants and `LIGHT_TRACK_*` constants moved into library header with `#ifndef` defaults
+- MIT license, author headers in all library source files, `FUNDING.yml`
+- README: Light Sensor and Feature Flags sections; author/copyright block; full license text
+
+### Changed
+
+- `src/main.cpp` refactored: `setup()` and `loop()` are now clean outlines delegating to named helpers (`setupSensor()`, `connectWifi()`, …, `loopDebugLog()`, `loopPushover()`, `loopWebServer()`, `loopMqtt()`)
+- `config.example.h` restructured: feature flags first, all settings guarded by `#if ENABLE_X`
+- Web dashboard reduced to two cards (Breathing Rate, Heart Rate); light lux moved to footer status line
+- MQTT reconnect now checked every loop iteration, not gated by the 5 s publish interval
+- Library no longer drives the LED automatically; callers control it from callbacks via `kit.setLedColor()`
+
 ### Fixed
 
 - Switch platform to `pioarduino/platform-espressif32` (community fork). The official `espressif32` platform ships Arduino-ESP32 2.0.17 which has no ESP32-C6 Arduino framework support; C6 requires Arduino-ESP32 3.x, bundled in pioarduino.

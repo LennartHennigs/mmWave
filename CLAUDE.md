@@ -21,53 +21,47 @@ Arduino C/C++ only. No STL, no `std::`, no RTTI. Prefer `char[]` + `snprintf` ov
 
 ## Architecture
 
-`src/main.cpp` is the single source file:
+`src/main.cpp` is the single source file, split into named helpers:
 
-- **setup():** `Serial` → sensor → WiFi (STA via WiFiMulti or captive-portal AP via WiFiManager) → mDNS → Telnet → OTA → WebSocket → AsyncWebServer → MQTT auto-discovery → alert callbacks
-- **loop():** `telnet.loop()` → `ArduinoOTA.handle()` → `mmWave.update(0)` → evaluate alerts every 1 s → deferred Pushover send → WebSocket push every 1 s → MQTT publish every 5 s
+- **setup():** calls `setupSensor()` → `connectWifi()` → `setupTelnet()` → `setupMdns()` → `setupOTA()` → `setupWebServer()` → `setupMqtt()` → `setupPushover()`
+- **loop():** `telnet.loop()` → `ArduinoOTA.handle()` → `kit.update()` → `loopDebugLog()` → `loopPushover()` → `loopWebServer()` → `loopMqtt()`
 
-**Sensor:** `SEEED_MR60BHA2` on `HardwareSerial(0)` (UART0). Key API: `getBreathRate(float&)`, `getHeartRate(float&)`, `getDistance(float&)`, `isHumanDetected()` — all called inside `if (mmWave.update(0))`.
+## mmWaveKit Library (`lib/mmWaveKit/`)
 
-**Web:** `AsyncWebServer` port 80. Inline HTML served at `/`. `AsyncWebSocket` at `/ws` pushes `{"br":x,"hr":y}` every 1 s. Page JS auto-reconnects on close.
+Wraps `SEEED_MR60BHA2` sensor, `BH1750` light sensor, and WS2812 LED. Key API:
 
-**MQTT:** `PubSubClient` with `setBufferSize(512)`. All topics built from `MQTT_TOPIC_PREFIX` and `MQTT_HA_PREFIX` in `config.h`. Publishes HA auto-discovery on connect; state payload includes breathing rate, heart rate, presence, and all 7 alert flags.
+- `kit.begin(VitalConfig, LightConfig)` — call once in `setupSensor()`
+- `kit.update()` — drain sensor, evaluate alerts every 1 s; call every `loop()`
+- `kit.getBreathingRate()` / `kit.getHeartRate()` / `kit.getLux()` / `kit.isPresent()`
+- `kit.setLedColor(r,g,b)` / `kit.setLedOff()` — library does **not** drive the LED; call from callbacks
+- Button2-style callbacks: `kit.onEvent()`, `kit.onPresenceOn/Off()`, `kit.onNoBreathing()`, `kit.onBecameLight/Dark()`, etc.
 
-**Telnet:** `ESPTelnet` on port 23. All `LOG()` output goes to both Serial (if `DEBUG 1`) and any connected Telnet client.
+**VitalConfig:** `profile` (`mmWaveKit::ADULT` or `mmWaveKit::TODDLER`), `zeroDebounceMs` (default 20 s), `threshDebounceMs` (default 15 s).
 
-**OTA:** `ArduinoOTA` using mDNS hostname `DEVICE_NAME`. PlatformIO env `seeed_xiao_esp32c6_ota` uploads via espota to `mmwave.local`.
+**LightConfig:** `threshold` (default 10 lux), `trackMode` (default `LIGHT_TRACK_ALWAYS`). Pass `{}` to use all defaults; `LIGHT_TRACK_MODE` from `config.h` flows in via the struct field initializer.
+
+**Library compile isolation:** `mmWaveKit.cpp` never includes `config.h` — `#ifndef` defaults in `mmWaveKit.h` always apply during library compilation (e.g. `trackMode` defaults to `LIGHT_TRACK_ALWAYS` regardless of `config.h`). Config values reach the library only via struct fields set in `main.cpp`.
 
 ## Alert System
 
-`evaluateAlerts()` runs every 1 s. Events are edge-triggered (fire only on state change) and dispatched via `fireAlert()` to all registered `onAlert()` callbacks.
+`kit.update()` evaluates alerts every 1 s. Events are edge-triggered and dispatched via callbacks. Debounce: 20 s for no-signal alerts, 15 s for low/high threshold alerts.
 
-**Debounce:** `ALERT_ZERO_DEBOUNCE_MS` (20 s) for no-signal alerts; `ALERT_DEBOUNCE_MS` (15 s) for low/high threshold alerts. 20 s zero-debounce covers normal toddler central apneas (2.5/hr).
+**Profiles:** `VITAL_PROFILE PROFILE_ADULT` or `PROFILE_TODDLER` in `config.h`. `main.cpp` maps this to `mmWaveKit::ADULT` / `mmWaveKit::TODDLER` in `VitalConfig`.
 
-**Profiles:** `VITAL_PROFILE PROFILE_ADULT` or `PROFILE_TODDLER` — selects sleep-tuned thresholds at compile time.
+**Pushover:** `pushoverHandler()` queues into globals; send happens in `loopPushover()` to avoid blocking sensor reads. Boot sends "mmWave Online" + IP if `ALERT_NOTIFY_ONLINE 1`. Notification gates (`ALERT_NOTIFY_BREATHING`, `ALERT_NOTIFY_HEART_RATE`, etc.) in `config.h`.
 
-**Pushover:** Deferred — `pushoverHandler()` queues into globals (`_poPending`, `_poTitle`, `_poMsg`, `_poPriority`); actual HTTPS send happens in `loop()` after `mmWave.update()` to avoid blocking sensor reads. Boot sends "mmWave Online" with IP if `ALERT_NOTIFY_ONLINE 1`.
+## Web Dashboard
 
-**Notification gates** (all in `config.h`, default 1):
-- `ALERT_NOTIFY_ONLINE` — "mmWave Online" + IP on boot
-- `ALERT_NOTIFY_PRESENCE_ON` / `ALERT_NOTIFY_PRESENCE_OFF` — presence edge events
-- `ALERT_NOTIFY_BREATHING` — no / low / high / irregular breathing
-- `ALERT_NOTIFY_HEART_RATE` — no / low / high heart rate
+`AsyncWebServer` port 80. HTML in `src/index_html.h` (PROGMEM). Two cards (Breathing Rate, Heart Rate); footer shows presence, lux, tracking mode. WebSocket `/ws` pushes `{"br":x,"hr":y,"presence":bool,"lx":x}` every 1 s. `/info` returns `{"track":n,"threshold":n}`.
 
-## MQTT Topic Structure
+## MQTT
 
-```
-<MQTT_HA_PREFIX>/sensor/<MQTT_TOPIC_PREFIX>_breathing_rate/config        ← HA discovery (retained)
-<MQTT_HA_PREFIX>/sensor/<MQTT_TOPIC_PREFIX>_heart_rate/config            ← HA discovery (retained)
-<MQTT_HA_PREFIX>/binary_sensor/<MQTT_TOPIC_PREFIX>_presence/config       ← HA discovery (retained)
-<MQTT_HA_PREFIX>/binary_sensor/<MQTT_TOPIC_PREFIX>_alert_*/config        ← 7 alert entities (retained)
-<MQTT_TOPIC_PREFIX>/sensor/state  →  {"breathing_rate":x,"heart_rate":y,"presence":"ON|OFF",
-                                       "alert_no_breathing":"ON|OFF", ...7 alert flags}
-<MQTT_TOPIC_PREFIX>/alert         →  {"event":"evt_name","value":x}      ← real-time alert events
-```
+`PubSubClient`, `setBufferSize(512)`. HA auto-discovery on connect (2 sensors, 8 binary sensors). State topic: `<prefix>/sensor/state`. Alert topic: `<prefix>/alert`. Reconnect every 30 s, checked each loop (not gated by publish interval).
 
 ## WiFi
 
-`connectWifi()` tries all networks in `WIFI_NETWORKS` via `WiFiMulti` (strongest available wins). On failure, starts WiFiManager captive portal AP (`mmwave` / `mmwave1234`). Portal times out after 180 s and restarts.
+`WiFiMulti` tries all `WIFI_NETWORKS` (strongest wins). On failure: WiFiManager captive portal AP (`DEVICE_NAME` / `WIFI_AP_PASSWORD`), 180 s timeout then restart.
 
 ## Partition Scheme
 
-`min_spiffs.csv` — 1.9 MB app partition (vs 1.25 MB default), keeps OTA slot. Required because WiFiMulti adds ~110 KB.
+`min_spiffs.csv` — 1.9 MB app partition (vs 1.25 MB default). Required because WiFiMulti adds ~110 KB.

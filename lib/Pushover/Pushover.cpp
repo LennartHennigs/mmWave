@@ -1,3 +1,11 @@
+/////////////////////////////////////////////////////////////////
+/*
+  Pushover.cpp - Minimal Pushover push notification client for ESP32.
+  Copyright (C) 2026 Lennart Hennigs.
+  Released under the MIT license.
+*/
+/////////////////////////////////////////////////////////////////
+
 #include "Pushover.h"
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
