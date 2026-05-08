@@ -301,13 +301,13 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     h1{font-size:.8rem;color:#555;text-transform:uppercase;letter-spacing:.2em}
     .row{display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center}
     .card{background:#1a1a1a;border:1px solid #252525;border-radius:16px;
-          padding:2rem 2.8rem;text-align:center;min-width:145px}
+          padding:2rem 0;text-align:center;width:160px}
     .label{font-size:.65rem;color:#555;text-transform:uppercase;letter-spacing:.14em;margin-bottom:.6rem}
     .val{font-size:3.8rem;font-weight:700;color:#3cf;line-height:1;font-variant-numeric:tabular-nums}
     .unit{font-size:.7rem;color:#444;margin-top:.5rem}
-    footer{font-size:.65rem;color:#444;display:flex;align-items:center;gap:.4rem}
-    #dot{width:7px;height:7px;border-radius:50%;background:#333}
-    #dot.live{background:#3d3}
+    footer{font-size:.65rem;color:#666;display:flex;align-items:center;gap:.4rem}
+    .fdot{width:7px;height:7px;border-radius:50%;background:#444}
+    .fdot.on{background:#3d3}
   </style>
 </head>
 <body>
@@ -324,24 +324,37 @@ static const char INDEX_HTML[] PROGMEM = R"html(
       <div class="unit">bpm</div>
     </div>
   </div>
-  <footer><div id="dot"></div><span id="st">connecting&hellip;</span></footer>
+  <footer>
+    <div id="dot" class="fdot"></div><span id="st">connecting&hellip;</span>
+    &ensp;<div id="pdot" class="fdot"></div><span id="pst">no presence</span>
+  </footer>
   <script>
     var ws, retries = 0;
+    var eDot  = document.getElementById('dot');
+    var eSt   = document.getElementById('st');
+    var ePdot = document.getElementById('pdot');
+    var ePst  = document.getElementById('pst');
+    var eBr   = document.getElementById('br');
+    var eHr   = document.getElementById('hr');
     function connect() {
       ws = new WebSocket('ws://' + location.hostname + '/ws');
       ws.onopen = function() {
-        document.getElementById('dot').className = 'live';
-        document.getElementById('st').textContent = 'live';
+        eDot.className = 'fdot on';
+        eSt.textContent = 'live';
         retries = 0;
       };
       ws.onmessage = function(e) {
         var d = JSON.parse(e.data);
-        if (d.br != null) document.getElementById('br').textContent = d.br.toFixed(1);
-        if (d.hr != null) document.getElementById('hr').textContent = d.hr.toFixed(1);
+        if (d.br != null) eBr.textContent = d.br.toFixed(1);
+        if (d.hr != null) eHr.textContent = d.hr.toFixed(1);
+        if (d.presence != null) {
+          ePdot.className = 'fdot' + (d.presence ? ' on' : '');
+          ePst.textContent = d.presence ? 'presence' : 'no presence';
+        }
       };
       ws.onclose = function() {
-        document.getElementById('dot').className = '';
-        document.getElementById('st').textContent = 'reconnecting…';
+        eDot.className = 'fdot';
+        eSt.textContent = 'reconnecting…';
         setTimeout(connect, Math.min(1000 * Math.pow(2, retries++), 10000));
       };
     }
@@ -614,7 +627,7 @@ void loop() {
     mmWave.getBreathRate(breathingRate);
     mmWave.getHeartRate(heartRate);
     mmWave.getDistance(dist);
-    presence = mmWave.isHumanDetected();
+    presence = mmWave.isHumanDetected() || breathingRate > 0.0f || heartRate > 0.0f;
   }
 
   unsigned long now = millis();
@@ -638,8 +651,9 @@ void loop() {
   if (now - lastWsPush >= 1000UL) {
     lastWsPush = now;
     if (ws.count() > 0) {
-      char json[64];
-      snprintf(json, sizeof(json), "{\"br\":%.1f,\"hr\":%.1f}", breathingRate, heartRate);
+      char json[80];
+      snprintf(json, sizeof(json), "{\"br\":%.1f,\"hr\":%.1f,\"presence\":%s}",
+               breathingRate, heartRate, presence ? "true" : "false");
       ws.textAll(json);
     }
   }
