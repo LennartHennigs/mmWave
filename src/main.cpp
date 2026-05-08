@@ -306,8 +306,8 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     .val{font-size:3.8rem;font-weight:700;color:#3cf;line-height:1;font-variant-numeric:tabular-nums}
     .unit{font-size:.7rem;color:#444;margin-top:.5rem}
     footer{font-size:.65rem;color:#666;display:flex;align-items:center;gap:.4rem}
-    .fdot{width:7px;height:7px;border-radius:50%;background:#444}
-    .fdot.on{background:#3d3}
+    .pdot{width:7px;height:7px;border-radius:50%;background:#444}
+    .pdot.on{background:#3d3}
   </style>
 </head>
 <body>
@@ -325,36 +325,27 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     </div>
   </div>
   <footer>
-    <div id="dot" class="fdot"></div><span id="st">connecting&hellip;</span>
-    &ensp;<div id="pdot" class="fdot"></div><span id="pst">no presence</span>
+    <div id="pdot" class="pdot"></div><span id="pst">no presence</span>
   </footer>
   <script>
     var ws, retries = 0;
-    var eDot  = document.getElementById('dot');
-    var eSt   = document.getElementById('st');
     var ePdot = document.getElementById('pdot');
     var ePst  = document.getElementById('pst');
     var eBr   = document.getElementById('br');
     var eHr   = document.getElementById('hr');
     function connect() {
       ws = new WebSocket('ws://' + location.hostname + '/ws');
-      ws.onopen = function() {
-        eDot.className = 'fdot on';
-        eSt.textContent = 'live';
-        retries = 0;
-      };
+      ws.onopen = function() { retries = 0; };
       ws.onmessage = function(e) {
         var d = JSON.parse(e.data);
         if (d.br != null) eBr.textContent = d.br.toFixed(1);
         if (d.hr != null) eHr.textContent = d.hr.toFixed(1);
         if (d.presence != null) {
-          ePdot.className = 'fdot' + (d.presence ? ' on' : '');
+          ePdot.className = 'pdot' + (d.presence ? ' on' : '');
           ePst.textContent = d.presence ? 'presence' : 'no presence';
         }
       };
       ws.onclose = function() {
-        eDot.className = 'fdot';
-        eSt.textContent = 'reconnecting…';
         setTimeout(connect, Math.min(1000 * Math.pow(2, retries++), 10000));
       };
     }
@@ -622,12 +613,20 @@ void loop() {
   ArduinoOTA.handle();
 #endif
 
-  if (mmWave.update(0)) {
-    float dist;
-    mmWave.getBreathRate(breathingRate);
-    mmWave.getHeartRate(heartRate);
-    mmWave.getDistance(dist);
-    presence = mmWave.isHumanDetected() || breathingRate > 0.0f || heartRate > 0.0f;
+  // Drain all queued frames. update(0) only processes ONE frame per call
+  // (processQueuedFrames exits immediately when timeout=0), so we loop.
+  // Getters are no-ops when their frame type wasn't in the current frame,
+  // leaving global values at their last reading — exactly the desired behavior.
+  {
+    bool anyDetected = false;
+    while (mmWave.update(0)) {
+      float dist;
+      mmWave.getBreathRate(breathingRate);
+      mmWave.getHeartRate(heartRate);
+      if (mmWave.getDistance(dist)) anyDetected = true;  // fast: fires continuously when in range
+      if (mmWave.isHumanDetected())  anyDetected = true;  // state-change event
+    }
+    presence = anyDetected || breathingRate > 0.0f || heartRate > 0.0f;
   }
 
   unsigned long now = millis();
