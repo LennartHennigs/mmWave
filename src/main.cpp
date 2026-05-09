@@ -217,7 +217,7 @@ struct EventMeta {
   mmWaveKit::Event evt;
   int              priority;   // 0 = normal, 1 = high (bypasses Pushover quiet hours)
   const char*      mqttName;
-  const char*      poMsg;      // %d = numeric value; plain string if no %d
+  const char*      poMsg;      // printf format: %d for numeric value, or plain string
 };
 
 static const EventMeta kEventMeta[] = {
@@ -233,6 +233,13 @@ static const EventMeta kEventMeta[] = {
 };
 static const uint8_t kEventMetaCount = sizeof(kEventMeta) / sizeof(kEventMeta[0]);
 
+static const EventMeta* findEventMeta(mmWaveKit::Event e) {
+  for (uint8_t i = 0; i < kEventMetaCount; i++) {
+    if (kEventMeta[i].evt == e) return &kEventMeta[i];
+  }
+  return nullptr;
+}
+
 #endif // ENABLE_PUSHOVER || ENABLE_MQTT
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -246,20 +253,12 @@ static char _poTitle[48];
 static char _poMsg[80];
 static int  _poPriority = 0;
 
-static void formatPoMsg(char* buf, size_t len, const char* tmpl, int value) {
-  if (strchr(tmpl, '%')) snprintf(buf, len, tmpl, value);
-  else                   snprintf(buf, len, "%s", tmpl);
-}
-
 static void pushoverHandler(mmWaveKit::Event e, int value) {
   if (!shouldNotify(e)) return;
-  const EventMeta* meta = nullptr;
-  for (uint8_t i = 0; i < kEventMetaCount; i++) {
-    if (kEventMeta[i].evt == e) { meta = &kEventMeta[i]; break; }
-  }
+  const EventMeta* meta = findEventMeta(e);
   if (!meta) return;
   if (_poPending && meta->priority <= _poPriority) return;
-  formatPoMsg(_poMsg, sizeof(_poMsg), meta->poMsg, value);
+  snprintf(_poMsg,   sizeof(_poMsg),   meta->poMsg, value);
   snprintf(_poTitle, sizeof(_poTitle), meta->priority == 1 ? "mmWave Alert" : "mmWave");
   _poPending  = true;
   _poPriority = meta->priority;
@@ -273,10 +272,7 @@ static void pushoverHandler(mmWaveKit::Event e, int value) {
 static void mqttAlertHandler(mmWaveKit::Event e, int value) {
   if (!mqttClient.connected()) return;
   if (!shouldNotify(e)) return;
-  const EventMeta* meta = nullptr;
-  for (uint8_t i = 0; i < kEventMetaCount; i++) {
-    if (kEventMeta[i].evt == e) { meta = &kEventMeta[i]; break; }
-  }
+  const EventMeta* meta = findEventMeta(e);
   if (!meta) return;
   char topic[64], payload[64];
   snprintf(topic,   sizeof(topic),   "%s/alert", MQTT_TOPIC_PREFIX);
@@ -287,7 +283,7 @@ static void mqttAlertHandler(mmWaveKit::Event e, int value) {
 #endif // ENABLE_MQTT
 
 ///////////////////////////////////////////////////////////////////////////////
-// Named kit callbacks (replaces lambdas)
+// Kit event callbacks
 ///////////////////////////////////////////////////////////////////////////////
 #if ENABLE_PUSHOVER || ENABLE_MQTT
 static void onAlertEvent(mmWaveKit&, mmWaveKit::Event e, int v) {
