@@ -54,7 +54,7 @@ static void logPrint(const char* fmt, ...) {
   Serial.print(buf);
 #endif
 #if ENABLE_TELNET
-  telnet.print(buf);
+  if (telnet.isConnected()) telnet.print(buf);
 #endif
 }
 #define LOG(fmt, ...) logPrint("[DBG] " fmt "\n", ##__VA_ARGS__)
@@ -189,25 +189,55 @@ void connectWifi() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Alert callbacks — gate checks + Pushover/MQTT wiring
+// Shared event metadata — used by Pushover and MQTT alert handlers
 ///////////////////////////////////////////////////////////////////////////////
 #if ENABLE_PUSHOVER || ENABLE_MQTT
+
 static bool shouldNotify(mmWaveKit::Event e) {
   switch (e) {
     case mmWaveKit::EVT_PRESENCE_ON:             return ALERT_NOTIFY_PRESENCE_ON;
     case mmWaveKit::EVT_PRESENCE_OFF:            return ALERT_NOTIFY_PRESENCE_OFF;
     case mmWaveKit::EVT_NO_BREATHING:
+      // fall through
     case mmWaveKit::EVT_LOW_BREATHING:
+      // fall through
     case mmWaveKit::EVT_HIGH_BREATHING:
+      // fall through
     case mmWaveKit::EVT_IRREGULAR_BREATHING:     return ALERT_NOTIFY_BREATHING;
     case mmWaveKit::EVT_NO_HEART_RATE:
+      // fall through
     case mmWaveKit::EVT_LOW_HEART_RATE:
+      // fall through
     case mmWaveKit::EVT_HIGH_HEART_RATE:         return ALERT_NOTIFY_HEART_RATE;
     default:                                     return false;
   }
 }
-#endif
 
+struct EventMeta {
+  mmWaveKit::Event evt;
+  int              priority;   // 0 = normal, 1 = high (bypasses Pushover quiet hours)
+  const char*      mqttName;
+  const char*      poMsg;      // %d = numeric value; plain string if no %d
+};
+
+static const EventMeta kEventMeta[] = {
+  { mmWaveKit::EVT_NO_BREATHING,        1, "no_breathing",        "No breathing detected!"       },
+  { mmWaveKit::EVT_LOW_BREATHING,       1, "low_breathing",       "Low breathing: %d rpm"        },
+  { mmWaveKit::EVT_HIGH_BREATHING,      1, "high_breathing",      "High breathing: %d rpm"       },
+  { mmWaveKit::EVT_IRREGULAR_BREATHING, 1, "irregular_breathing", "Irregular breathing detected" },
+  { mmWaveKit::EVT_NO_HEART_RATE,       1, "no_heart_rate",       "No heart rate detected!"      },
+  { mmWaveKit::EVT_LOW_HEART_RATE,      1, "low_heart_rate",      "Low heart rate: %d bpm"       },
+  { mmWaveKit::EVT_HIGH_HEART_RATE,     1, "high_heart_rate",     "High heart rate: %d bpm"      },
+  { mmWaveKit::EVT_PRESENCE_ON,         0, "presence_on",         "Presence detected"            },
+  { mmWaveKit::EVT_PRESENCE_OFF,        0, "presence_off",        "No presence"                  },
+};
+static const uint8_t kEventMetaCount = sizeof(kEventMeta) / sizeof(kEventMeta[0]);
+
+#endif // ENABLE_PUSHOVER || ENABLE_MQTT
+
+///////////////////////////////////////////////////////////////////////////////
+// Alert callbacks — Pushover
+///////////////////////////////////////////////////////////////////////////////
 #if ENABLE_PUSHOVER
 static Pushover _pushover(PUSHOVER_APP_TOKEN, PUSHOVER_USER_KEY);
 
@@ -216,52 +246,66 @@ static char _poTitle[48];
 static char _poMsg[80];
 static int  _poPriority = 0;
 
+static void formatPoMsg(char* buf, size_t len, const char* tmpl, int value) {
+  if (strchr(tmpl, '%')) snprintf(buf, len, tmpl, value);
+  else                   snprintf(buf, len, "%s", tmpl);
+}
+
 static void pushoverHandler(mmWaveKit::Event e, int value) {
   if (!shouldNotify(e)) return;
-  int priority = (e == mmWaveKit::EVT_PRESENCE_ON || e == mmWaveKit::EVT_PRESENCE_OFF) ? 0 : 1;
-  if (_poPending && priority <= _poPriority) return;
-  switch (e) {
-    case mmWaveKit::EVT_NO_BREATHING:        snprintf(_poMsg, sizeof(_poMsg), "No breathing detected!");          break;
-    case mmWaveKit::EVT_LOW_BREATHING:       snprintf(_poMsg, sizeof(_poMsg), "Low breathing: %d rpm", value);    break;
-    case mmWaveKit::EVT_HIGH_BREATHING:      snprintf(_poMsg, sizeof(_poMsg), "High breathing: %d rpm", value);   break;
-    case mmWaveKit::EVT_IRREGULAR_BREATHING: snprintf(_poMsg, sizeof(_poMsg), "Irregular breathing detected");    break;
-    case mmWaveKit::EVT_NO_HEART_RATE:       snprintf(_poMsg, sizeof(_poMsg), "No heart rate detected!");         break;
-    case mmWaveKit::EVT_LOW_HEART_RATE:      snprintf(_poMsg, sizeof(_poMsg), "Low heart rate: %d bpm", value);  break;
-    case mmWaveKit::EVT_HIGH_HEART_RATE:     snprintf(_poMsg, sizeof(_poMsg), "High heart rate: %d bpm", value); break;
-    case mmWaveKit::EVT_PRESENCE_ON:         snprintf(_poMsg, sizeof(_poMsg), "Presence detected");              break;
-    case mmWaveKit::EVT_PRESENCE_OFF:        snprintf(_poMsg, sizeof(_poMsg), "No presence");                    break;
-    default: return;
+  const EventMeta* meta = nullptr;
+  for (uint8_t i = 0; i < kEventMetaCount; i++) {
+    if (kEventMeta[i].evt == e) { meta = &kEventMeta[i]; break; }
   }
-  snprintf(_poTitle, sizeof(_poTitle), priority == 1 ? "mmWave Alert" : "mmWave");
+  if (!meta) return;
+  if (_poPending && meta->priority <= _poPriority) return;
+  formatPoMsg(_poMsg, sizeof(_poMsg), meta->poMsg, value);
+  snprintf(_poTitle, sizeof(_poTitle), meta->priority == 1 ? "mmWave Alert" : "mmWave");
   _poPending  = true;
-  _poPriority = priority;
+  _poPriority = meta->priority;
 }
 #endif // ENABLE_PUSHOVER
 
+///////////////////////////////////////////////////////////////////////////////
+// Alert callbacks — MQTT
+///////////////////////////////////////////////////////////////////////////////
 #if ENABLE_MQTT
 static void mqttAlertHandler(mmWaveKit::Event e, int value) {
   if (!mqttClient.connected()) return;
   if (!shouldNotify(e)) return;
-  const char* evtName = NULL;
-  switch (e) {
-    case mmWaveKit::EVT_PRESENCE_ON:         evtName = "presence_on";         break;
-    case mmWaveKit::EVT_PRESENCE_OFF:        evtName = "presence_off";        break;
-    case mmWaveKit::EVT_NO_BREATHING:        evtName = "no_breathing";        break;
-    case mmWaveKit::EVT_LOW_BREATHING:       evtName = "low_breathing";       break;
-    case mmWaveKit::EVT_HIGH_BREATHING:      evtName = "high_breathing";      break;
-    case mmWaveKit::EVT_IRREGULAR_BREATHING: evtName = "irregular_breathing"; break;
-    case mmWaveKit::EVT_NO_HEART_RATE:       evtName = "no_heart_rate";       break;
-    case mmWaveKit::EVT_LOW_HEART_RATE:      evtName = "low_heart_rate";      break;
-    case mmWaveKit::EVT_HIGH_HEART_RATE:     evtName = "high_heart_rate";     break;
-    default: return;
+  const EventMeta* meta = nullptr;
+  for (uint8_t i = 0; i < kEventMetaCount; i++) {
+    if (kEventMeta[i].evt == e) { meta = &kEventMeta[i]; break; }
   }
+  if (!meta) return;
   char topic[64], payload[64];
   snprintf(topic,   sizeof(topic),   "%s/alert", MQTT_TOPIC_PREFIX);
-  snprintf(payload, sizeof(payload), "{\"event\":\"%s\",\"value\":%d}", evtName, value);
+  snprintf(payload, sizeof(payload), "{\"event\":\"%s\",\"value\":%d}", meta->mqttName, value);
   mqttClient.publish(topic, payload);
   LOG("MQTT alert: %s", payload);
 }
 #endif // ENABLE_MQTT
+
+///////////////////////////////////////////////////////////////////////////////
+// Named kit callbacks (replaces lambdas)
+///////////////////////////////////////////////////////////////////////////////
+#if ENABLE_PUSHOVER || ENABLE_MQTT
+static void onAlertEvent(mmWaveKit&, mmWaveKit::Event e, int v) {
+  #if ENABLE_PUSHOVER
+    pushoverHandler(e, v);
+  #endif
+  #if ENABLE_MQTT
+    mqttAlertHandler(e, v);
+  #endif
+}
+#endif
+
+static void onBecameLightCb(mmWaveKit&, mmWaveKit::Event, int lux) {
+  LOG("light on (%d lux)", lux);
+}
+static void onBecameDarkCb(mmWaveKit&, mmWaveKit::Event, int lux) {
+  LOG("light off (%d lux)", lux);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Setup helpers
@@ -274,17 +318,10 @@ void setupSensor() {
              : mmWaveKit::ADULT;
 
 #if ENABLE_PUSHOVER || ENABLE_MQTT
-  kit.onEvent([](mmWaveKit&, mmWaveKit::Event e, int v) {
-#if ENABLE_PUSHOVER
-    pushoverHandler(e, v);
+  kit.onEvent(onAlertEvent);
 #endif
-#if ENABLE_MQTT
-    mqttAlertHandler(e, v);
-#endif
-  });
-#endif
-  kit.onBecameLight([](mmWaveKit&, mmWaveKit::Event, int lux) { LOG("light on (%d lux)", lux); });
-  kit.onBecameDark ([](mmWaveKit&, mmWaveKit::Event, int lux) { LOG("light off (%d lux)", lux); });
+  kit.onBecameLight(onBecameLightCb);
+  kit.onBecameDark(onBecameDarkCb);
 
   if (!kit.begin(vc, {}))
     LOG("mmWaveKit: light sensor init failed");
@@ -415,6 +452,28 @@ void loopWebServer(unsigned long now) {
 #endif
 }
 
+#if ENABLE_MQTT
+static void buildSensorPayload(char* buf, size_t len) {
+  const mmWaveKit::AlertState& a = kit.getAlerts();
+  snprintf(buf, len,
+           "{\"breathing_rate\":%d,\"heart_rate\":%d,\"presence\":\"%s\","
+           "\"alert_no_breathing\":\"%s\",\"alert_low_breathing\":\"%s\","
+           "\"alert_high_breathing\":\"%s\",\"alert_irreg_breathing\":\"%s\","
+           "\"alert_no_hr\":\"%s\",\"alert_low_hr\":\"%s\",\"alert_high_hr\":\"%s\","
+           "\"light_lux\":%d,\"distance\":%.1f}",
+           kit.getBreathingRate(), kit.getHeartRate(),
+           kit.isPresent() ? "ON" : "OFF",
+           a.noBreathing        ? "ON" : "OFF",
+           a.lowBreathing       ? "ON" : "OFF",
+           a.highBreathing      ? "ON" : "OFF",
+           a.irregularBreathing ? "ON" : "OFF",
+           a.noHeartRate        ? "ON" : "OFF",
+           a.lowHeartRate       ? "ON" : "OFF",
+           a.highHeartRate      ? "ON" : "OFF",
+           kit.getLux(), kit.getDistance());
+}
+#endif
+
 void loopMqtt(unsigned long now) {
 #if ENABLE_MQTT
   if (!mqttClient.connected() && (now - lastMqttAttempt >= 30000UL)) {
@@ -424,26 +483,10 @@ void loopMqtt(unsigned long now) {
   if (mqttClient.connected() && now - lastMqttPub >= 5000UL) {
     lastMqttPub = now;
     if (kit.isTrackingActive()) {
-      const mmWaveKit::AlertState& a = kit.getAlerts();
       char topic[64];
       char payload[320];
       snprintf(topic, sizeof(topic), "%s/sensor/state", MQTT_TOPIC_PREFIX);
-      snprintf(payload, sizeof(payload),
-               "{\"breathing_rate\":%d,\"heart_rate\":%d,\"presence\":\"%s\","
-               "\"alert_no_breathing\":\"%s\",\"alert_low_breathing\":\"%s\","
-               "\"alert_high_breathing\":\"%s\",\"alert_irreg_breathing\":\"%s\","
-               "\"alert_no_hr\":\"%s\",\"alert_low_hr\":\"%s\",\"alert_high_hr\":\"%s\","
-               "\"light_lux\":%d,\"distance\":%.1f}",
-               kit.getBreathingRate(), kit.getHeartRate(),
-               kit.isPresent() ? "ON" : "OFF",
-               a.noBreathing        ? "ON" : "OFF",
-               a.lowBreathing       ? "ON" : "OFF",
-               a.highBreathing      ? "ON" : "OFF",
-               a.irregularBreathing ? "ON" : "OFF",
-               a.noHeartRate        ? "ON" : "OFF",
-               a.lowHeartRate       ? "ON" : "OFF",
-               a.highHeartRate      ? "ON" : "OFF",
-               kit.getLux(), kit.getDistance());
+      buildSensorPayload(payload, sizeof(payload));
       mqttClient.publish(topic, payload);
       LOG("MQTT state: %s", payload);
     }
