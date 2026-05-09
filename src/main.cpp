@@ -139,6 +139,7 @@ void publishHaDiscovery() {
     {"binary_sensor", "alert_low_hr",          "Alert: Low Heart Rate",      "{{value_json.alert_low_hr}}",          "",    "alert_low_hr"},
     {"binary_sensor", "alert_high_hr",         "Alert: High Heart Rate",     "{{value_json.alert_high_hr}}",         "",    "alert_high_hr"},
     {"sensor",        "light_lux",             "Light Level",                "{{value_json.light_lux}}",             "lx",  "light_lux"},
+    {"sensor",        "distance",              "Detection Distance",          "{{value_json.distance}}",              "cm",  "distance"},
   };
   for (uint8_t i = 0; i < sizeof(entities) / sizeof(entities[0]); i++) {
     publishEntity(entities[i]);
@@ -334,9 +335,9 @@ void setupWebServer() {
     req->send(200, "text/html", INDEX_HTML);
   });
   server.on("/info", HTTP_GET, [](AsyncWebServerRequest* req) {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "{\"track\":%d,\"threshold\":%d}",
-             LIGHT_TRACK_MODE, kit.getThreshold());
+    char buf[80];
+    snprintf(buf, sizeof(buf), "{\"track\":%d,\"threshold\":%d,\"profile\":\"%s\"}",
+             LIGHT_TRACK_MODE, kit.getThreshold(), profileName);
     req->send(200, "application/json", buf);
   });
   server.begin();
@@ -375,9 +376,9 @@ void loopDebugLog(unsigned long now) {
   static unsigned long lastLog = 0;
   if (now - lastLog < 1000UL) return;
   lastLog = now;
-  LOG("br=%d hr=%d presence=%d lux=%d track=%s",
+  LOG("br=%d hr=%d presence=%d lux=%d dist=%.1f track=%s",
       kit.getBreathingRate(), kit.getHeartRate(),
-      (int)kit.isPresent(), kit.getLux(),
+      (int)kit.isPresent(), kit.getLux(), kit.getDistance(),
       kit.isTrackingActive() ? "active" : "gated");
 }
 
@@ -385,7 +386,8 @@ void loopPushover() {
 #if ENABLE_PUSHOVER
   if (_poPending) {
     _poPending = false;
-    int code = _pushover.send(_poTitle, _poMsg, _poPriority);
+    int code = _pushover.send(_poTitle, _poMsg, _poPriority,
+                              "http://" DEVICE_NAME ".local", "Open Dashboard");
     LOG("Pushover send: %d", code);
   }
 #endif
@@ -396,11 +398,12 @@ void loopWebServer(unsigned long now) {
   if (now - lastWsPush >= 1000UL) {
     lastWsPush = now;
     if (ws.count() > 0) {
-      char json[80];
+      char json[128];
       snprintf(json, sizeof(json),
-               "{\"br\":%d,\"hr\":%d,\"presence\":%s,\"lx\":%d}",
+               "{\"br\":%d,\"hr\":%d,\"presence\":%s,\"lx\":%d,\"dist\":%.1f}",
                kit.getBreathingRate(), kit.getHeartRate(),
-               kit.isPresent() ? "true" : "false", kit.getLux());
+               kit.isPresent() ? "true" : "false", kit.getLux(),
+               kit.getDistance());
       ws.textAll(json);
     }
   }
@@ -426,7 +429,7 @@ void loopMqtt(unsigned long now) {
                "\"alert_no_breathing\":\"%s\",\"alert_low_breathing\":\"%s\","
                "\"alert_high_breathing\":\"%s\",\"alert_irreg_breathing\":\"%s\","
                "\"alert_no_hr\":\"%s\",\"alert_low_hr\":\"%s\",\"alert_high_hr\":\"%s\","
-               "\"light_lux\":%d}",
+               "\"light_lux\":%d,\"distance\":%.1f}",
                kit.getBreathingRate(), kit.getHeartRate(),
                kit.isPresent() ? "ON" : "OFF",
                a.noBreathing        ? "ON" : "OFF",
@@ -436,7 +439,7 @@ void loopMqtt(unsigned long now) {
                a.noHeartRate        ? "ON" : "OFF",
                a.lowHeartRate       ? "ON" : "OFF",
                a.highHeartRate      ? "ON" : "OFF",
-               kit.getLux());
+               kit.getLux(), kit.getDistance());
       mqttClient.publish(topic, payload);
       LOG("MQTT state: %s", payload);
     }

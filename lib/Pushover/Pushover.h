@@ -29,7 +29,8 @@ class Pushover {
 public:
   Pushover(const char* appToken, const char* userKey);
 
-  int send(const char* title, const char* message, int priority = 0);
+  int send(const char* title, const char* message, int priority = 0,
+           const char* url = nullptr, const char* urlTitle = nullptr);
 
 private:
   const char* _token;

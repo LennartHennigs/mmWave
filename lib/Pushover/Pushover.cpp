@@ -15,16 +15,21 @@ static const char PO_URL[] = "https://api.pushover.net/1/messages.json";
 Pushover::Pushover(const char* appToken, const char* userKey)
   : _token(appToken), _user(userKey) {}
 
-int Pushover::send(const char* title, const char* message, int priority) {
+int Pushover::send(const char* title, const char* message, int priority,
+                   const char* url, const char* urlTitle) {
   WiFiClientSecure client;
   client.setInsecure();   // cert pinning unnecessary for push notifications
   HTTPClient http;
   if (!http.begin(client, PO_URL)) return -1;
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  char body[384];
-  snprintf(body, sizeof(body),
-           "token=%s&user=%s&title=%s&message=%s&priority=%d",
-           _token, _user, title, message, priority);
+  char body[512];
+  int len = snprintf(body, sizeof(body),
+                     "token=%s&user=%s&title=%s&message=%s&priority=%d",
+                     _token, _user, title, message, priority);
+  if (url && url[0] && len < (int)sizeof(body) - 1)
+    len += snprintf(body + len, sizeof(body) - len, "&url=%s", url);
+  if (urlTitle && urlTitle[0] && len < (int)sizeof(body) - 1)
+    snprintf(body + len, sizeof(body) - len, "&url_title=%s", urlTitle);
   int code = http.POST(reinterpret_cast<uint8_t*>(body), strlen(body));
   http.end();
   return code;

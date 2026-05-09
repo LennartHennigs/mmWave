@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pushover notifications now include a link to `http://DEVICE_NAME.local` ("Open Dashboard") so the device can be reached directly from the notification
+- Web dashboard footer split into two rows: presence / distance / lux on top; profile name and track mode on the bottom
+- `/info` endpoint now returns `profile` field (`"adult"` or `"toddler"`) alongside track and threshold
+- `mmWaveKit::getFirmwareVersion()` — two overloads: `(uint8_t&, uint8_t&, uint8_t&)` and `(char* buf, size_t len)`; firmware version is requested on `begin()` and latched on first successful read
+- `mmWaveKit::getDistance()` — returns the last known target distance in cm as `float`
+- `platformio.ini`: `firmware_query` and `firmware_query_ota` environments for the standalone firmware-version query sketch; `build_src_filter` added to the main env to exclude that sketch
 - `mmWaveKit` library (`lib/mmWaveKit/`) wrapping `SEEED_MR60BHA2`, `BH1750` light sensor, and WS2812 LED with a Button2-style callback API
 - `mmWaveKit::VitalConfig` and `LightConfig` structs with sensible defaults; `ADULT` and `TODDLER` vital profiles baked into the library
 - `ENABLE_TELNET` feature flag to compile out ESPTelnet entirely

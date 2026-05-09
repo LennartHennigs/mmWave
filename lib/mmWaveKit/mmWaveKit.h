@@ -72,10 +72,14 @@ public:
   bool begin(HardwareSerial& serial, const VitalConfig& vc, const LightConfig& lc);
   void update();  // call every loop() — drains sensor, evaluates alerts every 1 s
 
+  bool getFirmwareVersion(uint8_t& major, uint8_t& sub, uint8_t& modified) const;
+  bool getFirmwareVersion(char* buf, size_t len) const;
+
   // ── Readings (all int — no fractions) ────────────────────────────────
-  int  getBreathingRate() const { return (int)_br; }
-  int  getHeartRate()     const { return (int)_hr; }
-  int  getLux()           const { return (int)_lux; }
+  int   getBreathingRate() const { return (int)_br; }
+  int   getHeartRate()     const { return (int)_hr; }
+  float getDistance()      const { return _dist; }
+  int   getLux()           const { return (int)_lux; }
   bool isPresent()        const { return _presence; }
   bool isLight()          const { return (int)_lux >= _lightCfg.threshold; }
   bool isDark()           const { return (int)_lux <  _lightCfg.threshold; }
@@ -112,8 +116,12 @@ public:
   void setLedOff();
 
 private:
-  float _br = 0.0f, _hr = 0.0f, _lux = 0.0f;
+  float _br = 0.0f, _hr = 0.0f, _lux = 0.0f, _dist = 0.0f;
   bool  _presence = false, _prevPresence = false;
+  uint8_t _fwMajor = 0, _fwSub = 0, _fwModified = 0;
+  bool    _fwValid = false;
+
+  void _requestFirmwareVersion();
 
   VitalConfig _vitalCfg;
   LightConfig _lightCfg;

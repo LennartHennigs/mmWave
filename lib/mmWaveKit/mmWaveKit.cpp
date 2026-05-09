@@ -32,6 +32,7 @@ bool mmWaveKit::begin(HardwareSerial& serial,
   if (!_vitalCfg.profile.brHigh) _vitalCfg.profile = ADULT;
 
   _mmwave.begin(&serial);
+  _requestFirmwareVersion();
 
   Wire.begin();
   bool ok = _bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
@@ -45,14 +46,42 @@ bool mmWaveKit::begin(HardwareSerial& serial,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void mmWaveKit::_requestFirmwareVersion() {
+  _mmwave.send(0xFFFF);
+}
+
+bool mmWaveKit::getFirmwareVersion(uint8_t& major, uint8_t& sub, uint8_t& modified) const {
+  if (!_fwValid) return false;
+  major    = _fwMajor;
+  sub      = _fwSub;
+  modified = _fwModified;
+  return true;
+}
+
+bool mmWaveKit::getFirmwareVersion(char* buf, size_t len) const {
+  if (!_fwValid || !buf || len == 0) return false;
+  snprintf(buf, len, "%u.%u.%u", _fwMajor, _fwSub, _fwModified);
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 void mmWaveKit::update() {
   bool anyDetected = false;
   while (_mmwave.update(0)) {
     float dist;
     _mmwave.getBreathRate(_br);
     _mmwave.getHeartRate(_hr);
-    if (_mmwave.getDistance(dist)) anyDetected = true;
+    if (_mmwave.getDistance(dist)) { _dist = dist; anyDetected = true; }
     if (_mmwave.isHumanDetected())  anyDetected = true;
+    if (!_fwValid) {
+      FirmwareInfo fi;
+      if (_mmwave.getFirmwareInfo(fi)) {
+        _fwMajor    = fi.firmware_verson.major_version;
+        _fwSub      = fi.firmware_verson.sub_version;
+        _fwModified = fi.firmware_verson.modified_version;
+        _fwValid    = true;
+      }
+    }
   }
   _presence = anyDetected || _br > 0.0f || _hr > 0.0f;
 

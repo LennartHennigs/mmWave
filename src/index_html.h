@@ -20,7 +20,8 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     .label{font-size:.65rem;color:#555;text-transform:uppercase;letter-spacing:.14em;margin-bottom:.6rem}
     .val{font-size:3.8rem;font-weight:700;color:#3cf;line-height:1;font-variant-numeric:tabular-nums}
     .unit{font-size:.7rem;color:#444;margin-top:.5rem}
-    footer{font-size:.65rem;color:#666;display:flex;align-items:center;gap:.4rem}
+    footer{font-size:.65rem;color:#666;display:flex;flex-direction:column;align-items:center;gap:.3rem}
+    .frow{display:flex;align-items:center;gap:.4rem}
     .pdot{width:7px;height:7px;border-radius:50%;background:#444}
     .pdot.on{background:#3d3}
   </style>
@@ -40,9 +41,12 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     </div>
   </div>
   <footer>
-    <div id="pdot" class="pdot"></div><span id="pst">no presence</span>
-    &nbsp;·&nbsp;<span id="lx">--</span> lux
-    &nbsp;·&nbsp;<span id="tmode"></span>
+    <div class="frow">
+      <div id="pdot" class="pdot"></div><span id="pst">no presence</span>
+      &nbsp;·&nbsp;<span id="dist">--</span> cm
+      &nbsp;·&nbsp;<span id="lx">--</span> lux
+    </div>
+    <div class="frow"><span id="tmode"></span></div>
   </footer>
   <script>
     var ws, retries = 0;
@@ -51,6 +55,7 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     var eBr    = document.getElementById('br');
     var eHr    = document.getElementById('hr');
     var eLx    = document.getElementById('lx');
+    var eDist  = document.getElementById('dist');
     var eTmode = document.getElementById('tmode');
     function connect() {
       ws = new WebSocket('ws://' + location.hostname + '/ws');
@@ -59,7 +64,8 @@ static const char INDEX_HTML[] PROGMEM = R"html(
         var d = JSON.parse(e.data);
         if (d.br != null) eBr.textContent = d.br;
         if (d.hr != null) eHr.textContent = d.hr;
-        if (d.lx != null) eLx.textContent = d.lx;
+        if (d.lx   != null) eLx.textContent   = d.lx;
+        if (d.dist != null) eDist.textContent = d.dist;
         if (d.presence != null) {
           ePdot.className = 'pdot' + (d.presence ? ' on' : '');
           ePst.textContent = d.presence ? 'presence' : 'no presence';
@@ -72,7 +78,8 @@ static const char INDEX_HTML[] PROGMEM = R"html(
     connect();
     fetch('/info').then(function(r){return r.json();}).then(function(d){
       var m = ['', 'Always', 'Dark only', 'Light only'];
-      eTmode.textContent = 'Track: ' + m[d.track] + (d.track > 1 ? ' (' + d.threshold + ' lux)' : '');
+      var profile = d.profile ? d.profile.charAt(0).toUpperCase() + d.profile.slice(1) : '';
+      eTmode.textContent = 'Profile: ' + profile + '  ·  Track: ' + m[d.track] + (d.track > 1 ? ' (' + d.threshold + ' lux)' : '');
     });
   </script>
 </body>

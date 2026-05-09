@@ -32,7 +32,8 @@ Wraps `SEEED_MR60BHA2` sensor, `BH1750` light sensor, and WS2812 LED. Key API:
 
 - `kit.begin(VitalConfig, LightConfig)` — call once in `setupSensor()`
 - `kit.update()` — drain sensor, evaluate alerts every 1 s; call every `loop()`
-- `kit.getBreathingRate()` / `kit.getHeartRate()` / `kit.getLux()` / `kit.isPresent()`
+- `kit.getBreathingRate()` / `kit.getHeartRate()` / `kit.getDistance()` / `kit.getLux()` / `kit.isPresent()`
+- `kit.getFirmwareVersion(major, sub, modified)` / `kit.getFirmwareVersion(buf, len)` — returns sensor firmware version; valid after first successful read in `update()`
 - `kit.setLedColor(r,g,b)` / `kit.setLedOff()` — library does **not** drive the LED; call from callbacks
 - Button2-style callbacks: `kit.onEvent()`, `kit.onPresenceOn/Off()`, `kit.onNoBreathing()`, `kit.onBecameLight/Dark()`, etc.
 
@@ -48,11 +49,11 @@ Wraps `SEEED_MR60BHA2` sensor, `BH1750` light sensor, and WS2812 LED. Key API:
 
 **Profiles:** `VITAL_PROFILE PROFILE_ADULT` or `PROFILE_TODDLER` in `config.h`. `main.cpp` maps this to `mmWaveKit::ADULT` / `mmWaveKit::TODDLER` in `VitalConfig`.
 
-**Pushover:** `pushoverHandler()` queues into globals; send happens in `loopPushover()` to avoid blocking sensor reads. Boot sends "mmWave Online" + IP if `ALERT_NOTIFY_ONLINE 1`. Notification gates (`ALERT_NOTIFY_BREATHING`, `ALERT_NOTIFY_HEART_RATE`, etc.) in `config.h`.
+**Pushover:** `pushoverHandler()` queues into globals; send happens in `loopPushover()` to avoid blocking sensor reads. Boot sends "mmWave Online" + IP if `ALERT_NOTIFY_ONLINE 1`. Every notification includes `url=http://DEVICE_NAME.local` ("Open Dashboard"). Notification gates (`ALERT_NOTIFY_BREATHING`, `ALERT_NOTIFY_HEART_RATE`, etc.) in `config.h`.
 
 ## Web Dashboard
 
-`AsyncWebServer` port 80. HTML in `src/index_html.h` (PROGMEM). Two cards (Breathing Rate, Heart Rate); footer shows presence, lux, tracking mode. WebSocket `/ws` pushes `{"br":x,"hr":y,"presence":bool,"lx":x}` every 1 s. `/info` returns `{"track":n,"threshold":n}`.
+`AsyncWebServer` port 80. HTML in `src/index_html.h` (PROGMEM). Two cards (Breathing Rate, Heart Rate); footer row 1 shows presence / distance / lux, row 2 shows profile name and tracking mode. WebSocket `/ws` pushes `{"br":x,"hr":y,"presence":bool,"lx":x,"dist":x}` every 1 s. `/info` returns `{"track":n,"threshold":n,"profile":"adult"|"toddler"}`.
 
 ## MQTT
 

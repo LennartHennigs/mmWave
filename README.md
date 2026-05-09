@@ -40,7 +40,7 @@ Requires the device to be reachable at `mmwave.local`.
 
 ## Web Dashboard
 
-`http://mmwave.local` — live breathing rate and heart rate, updated via WebSocket every second. Footer shows presence status, lux reading, and tracking mode.
+`http://mmwave.local` — live breathing rate and heart rate, updated via WebSocket every second. Footer shows presence status, distance, and lux on the first line; active profile and tracking mode on the second line.
 
 ## Alerts
 
@@ -65,7 +65,7 @@ Notification gates in `config.h` let you silence individual categories:
 
 ## Pushover
 
-Set `ENABLE_PUSHOVER 1` and add your app token and user key to `config.h`. The device sends a notification on boot and on any active alert event. Critical alerts (vital signs) use Pushover priority 1 (bypasses quiet hours); presence and online notifications use priority 0.
+Set `ENABLE_PUSHOVER 1` and add your app token and user key to `config.h`. The device sends a notification on boot and on any active alert event. Critical alerts (vital signs) use Pushover priority 1 (bypasses quiet hours); presence and online notifications use priority 0. Every notification includes a link to `http://DEVICE_NAME.local` ("Open Dashboard") for one-tap access to the web UI.
 
 ## MQTT / Home Assistant
 
