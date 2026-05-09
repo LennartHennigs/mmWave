@@ -1,12 +1,47 @@
 # mmWave Monitor
 
-Firmware for Seeed XIAO ESP32-C6 + MR60BHA2 mmWave sensor. Reads breathing rate and heart rate, serves a live WebSocket dashboard, publishes to MQTT with Home Assistant auto-discovery, and sends Pushover push notifications when vital sign thresholds are exceeded.
+Arduino library and ESP32 application for the Seeed MR60BHA2 60 GHz mmWave sensor.
 
 - Author: Lennart Hennigs (<https://www.lennarthennigs.de>)
 - Copyright (C) 2026 Lennart Hennigs.
 - Released under the MIT license.
 
+## Description
+
+`mmWaveKit` is an Arduino library that wraps the MR60BHA2 sensor with a Button2-style callback API for breathing rate, heart rate, and presence events. On top of it, this repo includes a complete ESP32 application with the following features:
+
+- **Web dashboard** at `http://mmwave.local` — live breathing rate, heart rate, presence, lux, and distance via WebSocket
+- **MQTT** with Home Assistant auto-discovery — 10 entities appear automatically on connect
+- **Pushover notifications** for alert events with a direct link back to the dashboard
+- **Three vital profiles:** `PROFILE_ADULT`, `PROFILE_CHILD` (3–12 yr), `PROFILE_TODDLER` (1–3 yr)
+- **Light sensor gating** via `LIGHT_TRACK_MODE` — track only in dark, light, or always
+- **OTA updates**, mDNS (`mmwave.local`), Telnet debug log, WiFiMulti with captive portal fallback
+
+To see the latest changes please take a look at the [Changelog](CHANGELOG.md).
+
 If you find this project helpful please consider giving it a ⭐️ at [GitHub](https://github.com/LennartHennigs/mmWave) and/or [buy me a ☕️](https://ko-fi.com/lennart0815).
+
+## Hardware
+
+The [MR60BHA2 mmWave Kit](https://wiki.seeedstudio.com/getting_started_with_mr60bha2_mmwave_kit/) combines a 60 GHz radar with a Seeed XIAO ESP32C6 for non-contact vital sign monitoring during sleep.
+
+| Spec | Value |
+| ---- | ----- |
+| MCU | XIAO ESP32C6 (Wi-Fi + Bluetooth) |
+| Sensor | 60 GHz mmWave radar |
+| Breathing / heart rate range | up to 1.5 m |
+| Presence detection range | up to 6 m |
+| RGB LED | WS2812 addressable |
+| Light sensor | BH1750 (1–65,535 lux) |
+| Power | 5 V / 1 A |
+
+> **Installation:** Mount ~1 m above the bed, tilted 45° downward toward the chest area. Designed for sleep monitoring — the manufacturer advises against use while seated at a desk or during exercise.
+
+## Web Dashboard
+
+![mmWave Monitor dashboard](docs/dashboard.jpg)
+
+`http://mmwave.local` — live breathing rate and heart rate, updated via WebSocket every second. Footer shows presence status, distance, and lux on the first line; active profile and tracking mode on the second line.
 
 ## Setup
 
@@ -37,10 +72,6 @@ pio run -e seeed_xiao_esp32c6_ota -t upload
 ```
 
 Requires the device to be reachable at `mmwave.local`.
-
-## Web Dashboard
-
-`http://mmwave.local` — live breathing rate and heart rate, updated via WebSocket every second. Footer shows presence status, distance, and lux on the first line; active profile and tracking mode on the second line.
 
 ## Alerts
 
