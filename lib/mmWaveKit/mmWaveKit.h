@@ -24,11 +24,12 @@
   #define PROFILE_CHILD   2
 #endif
 
-
+// NOTE: Only one mmWaveKit instance is supported per program.
+// The .cpp uses file-scope statics (_bh, _led, _serial, _mmwave) shared across instances.
 class mmWaveKit {
 public:
 
-  // ── Profiles — two preset instances of the same struct ───────────────
+  // ── Profiles — preset instances of VitalProfile ────────────────────
   struct VitalProfile {
     int   brLow, brHigh;      // rpm thresholds
     float brIrregStddev;      // rpm std-dev threshold for irregular breathing
@@ -38,10 +39,10 @@ public:
   static const VitalProfile CHILD;    // BR 16-30 rpm,  HR  60-120 bpm  (3-12 yr)
   static const VitalProfile TODDLER;  // BR 16-45 rpm,  HR  60-160 bpm  (1-3 yr)
 
-  // ── Config structs (passed once to begin()) ───────────────────────────
+  // ── Config structs (passed once to begin()) ─────────────────────
   // VitalConfig: person — vital sign thresholds + debounce timings
   struct VitalConfig {
-    VitalProfile profile;
+    VitalProfile profile          = ADULT;   // default: narrowest thresholds, most sensitive alerts
     uint32_t     zeroDebounceMs   = 20000;
     uint32_t     threshDebounceMs = 15000;
   };
@@ -50,9 +51,10 @@ public:
   struct LightConfig {
     int     threshold = 10;              // lux boundary between dark and light
     uint8_t trackMode = LIGHT_TRACK_MODE;
+    uint8_t ledPin    = 1;              // NeoPixel data pin; matches hardware default (D1)
   };
 
-  // ── Events ───────────────────────────────────────────────────────────
+  // ── Events ──────────────────────────────────────────────
   enum Event {
     EVT_PRESENCE_ON, EVT_PRESENCE_OFF,
     EVT_NO_BREATHING, EVT_LOW_BREATHING, EVT_HIGH_BREATHING, EVT_IRREGULAR_BREATHING,
@@ -63,13 +65,13 @@ public:
   // reading at fire time: br (rpm) / hr (bpm) / lux; 0 for presence events.
   typedef void (*EventCallback)(mmWaveKit& kit, Event e, int value);
 
-  // ── Alert state snapshot ──────────────────────────────────────────────
+  // ── Alert state snapshot ────────────────────────────────────────
   struct AlertState {
     bool noBreathing, lowBreathing, highBreathing, irregularBreathing;
     bool noHeartRate, lowHeartRate, highHeartRate;
   };
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────
   bool begin(const VitalConfig& vc, const LightConfig& lc);
   bool begin(HardwareSerial& serial, const VitalConfig& vc, const LightConfig& lc);
   void update();  // call every loop() — drains sensor, evaluates alerts every 1 s
@@ -77,16 +79,16 @@ public:
   bool getFirmwareVersion(uint8_t& major, uint8_t& sub, uint8_t& modified) const;
   bool getFirmwareVersion(char* buf, size_t len) const;
 
-  // ── Readings (all int — no fractions) ────────────────────────────────
+  // ── Readings ────────────────────────────────────────────────────
   int   getBreathingRate() const { return (int)_br; }
   int   getHeartRate()     const { return (int)_hr; }
   float getDistance()      const { return _dist; }
   int   getLux()           const { return (int)_lux; }
-  bool isPresent()        const { return _presence; }
-  bool isLight()          const { return (int)_lux >= _lightCfg.threshold; }
-  bool isDark()           const { return (int)_lux <  _lightCfg.threshold; }
-  int  getThreshold()     const { return _lightCfg.threshold; }
-  bool isTrackingActive() const;
+  bool  isPresent()        const { return _presence; }
+  bool  isLight()          const { return (int)_lux >= _lightCfg.threshold; }
+  bool  isDark()           const { return (int)_lux <  _lightCfg.threshold; }
+  int   getThreshold()     const { return _lightCfg.threshold; }
+  bool  isTrackingActive() const;
   const AlertState& getAlerts() const { return _alerts; }
 
   // ── Callbacks — general + per-event (Button2 pattern) ─────────────────
@@ -113,7 +115,7 @@ public:
   void onBecameDark(EventCallback cb)            { _onBecameDark = cb; }
   void onLightSituationChanged(EventCallback cb) { _onLightSituationChanged = cb; }
 
-  // ── LED ───────────────────────────────────────────────────────────────
+  // ── LED ─────────────────────────────────────────────────────────
   void setLedColor(uint8_t r, uint8_t g, uint8_t b);
   void setLedOff();
 
@@ -154,6 +156,10 @@ private:
   EventCallback _onLightSituationChanged = nullptr;
 
   void  _evalVitals(unsigned long now);
+  void  _evalPresence();
+  void  _evalBreathing(unsigned long now);
+  void  _evalHeartRate(unsigned long now);
+  void  _fireEdge(bool cur, bool prev, Event e, int val);
   void  _evalLight();
   void  _debounce(bool cond, unsigned long now, unsigned long& since,
                   uint32_t ms, bool& flag);

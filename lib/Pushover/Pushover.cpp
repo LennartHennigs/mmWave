@@ -21,16 +21,20 @@ int Pushover::send(const char* title, const char* message, int priority,
   client.setInsecure();   // cert pinning unnecessary for push notifications
   HTTPClient http;
   if (!http.begin(client, PO_URL)) return -1;
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  http.addHeader("Content-Type", "application/json");
+  // Safe: all firmware-generated strings are plain ASCII (no '"' or '\').
   char body[512];
   int len = snprintf(body, sizeof(body),
-                     "token=%s&user=%s&title=%s&message=%s&priority=%d",
+                     "{\"token\":\"%s\",\"user\":\"%s\","
+                     "\"title\":\"%s\",\"message\":\"%s\",\"priority\":%d",
                      _token, _user, title, message, priority);
   if (url && url[0] && len < (int)sizeof(body) - 1)
-    len += snprintf(body + len, sizeof(body) - len, "&url=%s", url);
+    len += snprintf(body + len, sizeof(body) - len, ",\"url\":\"%s\"", url);
   if (urlTitle && urlTitle[0] && len < (int)sizeof(body) - 1)
-    snprintf(body + len, sizeof(body) - len, "&url_title=%s", urlTitle);
-  int code = http.POST(reinterpret_cast<uint8_t*>(body), strlen(body));
+    len += snprintf(body + len, sizeof(body) - len, ",\"url_title\":\"%s\"", urlTitle);
+  if (len >= (int)sizeof(body) - 1) { http.end(); return -2; }  // truncated — don't send invalid JSON
+  snprintf(body + len, sizeof(body) - len, "}");
+  int code = http.POST(body);
   http.end();
   return code;
 }

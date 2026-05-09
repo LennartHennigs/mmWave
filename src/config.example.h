@@ -70,10 +70,11 @@
 
 // ---------------------------------------------------------------------------
 // Vital sign profile — selects preset thresholds from mmWaveKit library:
-//   PROFILE_ADULT   — sleeping adult  (BR 10-20 rpm, HR 40-100 bpm)
-//   PROFILE_TODDLER — toddler sleeping (BR 16-45 rpm, HR 60-160 bpm)
+//   PROFILE_ADULT   — sleeping adult   (BR 10-20 rpm, HR  40-100 bpm)
+//   PROFILE_CHILD   — child (3-12 yr)  (BR 16-30 rpm, HR  60-120 bpm)
+//   PROFILE_TODDLER — toddler (1-3 yr) (BR 16-45 rpm, HR  60-160 bpm)
 // ---------------------------------------------------------------------------
-#define VITAL_PROFILE   PROFILE_ADULT   // PROFILE_ADULT or PROFILE_TODDLER
+#define VITAL_PROFILE   PROFILE_ADULT   // PROFILE_ADULT, PROFILE_CHILD, or PROFILE_TODDLER
 
 // ---------------------------------------------------------------------------
 // Light sensor (BH1750 I2C on D4/D5) + data tracking mode

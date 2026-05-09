@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `PROFILE_CHILD` vital profile (BR 16–30 rpm, HR 60–120 bpm, ages 3–12 yr)
+- `LightConfig.ledPin` field — NeoPixel data pin configurable without editing library source (default 1/D1); `begin()` calls `setPin()` before `led.begin()`
+- `EventMeta` lookup table in `main.cpp` — single source of truth for event strings, MQTT names, and Pushover message formats/priorities; replaces parallel switch statements in alert handlers
+- Named static callbacks (`onAlertEvent`, `onBecameLightCb`, `onBecameDarkCb`) replace inline lambdas in `setupSensor()`
+- `_fireEdge()` private helper replaces `FIRE_EDGE` macro in `mmWaveKit.cpp`
+- `_evalPresence()`, `_evalBreathing()`, `_evalHeartRate()` extracted from monolithic `_evalVitals()`
 - Pushover notifications now include a link to `http://DEVICE_NAME.local` ("Open Dashboard") so the device can be reached directly from the notification
 - Web dashboard footer split into two rows: presence / distance / lux on top; profile name and track mode on the bottom
 - `/info` endpoint now returns `profile` field (`"adult"` or `"toddler"`) alongside track and threshold
@@ -34,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Presence detection now driven by `anyDetected || _br > 0 || _hr > 0`; `getBreathRate()`/`getHeartRate()` are consume-once latches so values are not reset between calls — stale readings are safe because `_evalVitals` resets all alert state when presence is lost
+- `_brStddev()` Bessel's correction (`/ (N-1)` instead of `/ N`) — sample standard deviation, not population standard deviation
+- Pushover body switched from `application/x-www-form-urlencoded` to `application/json` — form-encoding silently mangled messages containing `&`, `=`, `+`, or spaces
+- `Pushover::send()` returns `-2` and aborts early if JSON body would be truncated, preventing a silent invalid-JSON POST
+- `telnet.print()` guarded by `isConnected()` — printing to a disconnected Telnet client no longer causes issues
+- `VitalConfig::profile` struct default changed to `ADULT` (narrowest thresholds, most sensitive); prior `TODDLER` default was the least sensitive profile
 - Switch platform to `pioarduino/platform-espressif32` (community fork). The official `espressif32` platform ships Arduino-ESP32 2.0.17 which has no ESP32-C6 Arduino framework support; C6 requires Arduino-ESP32 3.x, bundled in pioarduino.
 - Simplified `.gitignore` to exclude the entire `.vscode/` directory instead of individual files.
 

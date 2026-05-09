@@ -37,7 +37,7 @@ Wraps `SEEED_MR60BHA2` sensor, `BH1750` light sensor, and WS2812 LED. Key API:
 - `kit.setLedColor(r,g,b)` / `kit.setLedOff()` — library does **not** drive the LED; call from callbacks
 - Button2-style callbacks: `kit.onEvent()`, `kit.onPresenceOn/Off()`, `kit.onNoBreathing()`, `kit.onBecameLight/Dark()`, etc.
 
-**VitalConfig:** `profile` (`mmWaveKit::ADULT` or `mmWaveKit::TODDLER`), `zeroDebounceMs` (default 20 s), `threshDebounceMs` (default 15 s).
+**VitalConfig:** `profile` (`mmWaveKit::ADULT`, `mmWaveKit::CHILD`, or `mmWaveKit::TODDLER`), `zeroDebounceMs` (default 20 s), `threshDebounceMs` (default 15 s).
 
 **LightConfig:** `threshold` (default 10 lux), `trackMode` (default `LIGHT_TRACK_ALWAYS`). Pass `{}` to use all defaults; `LIGHT_TRACK_MODE` from `config.h` flows in via the struct field initializer.
 
@@ -47,7 +47,7 @@ Wraps `SEEED_MR60BHA2` sensor, `BH1750` light sensor, and WS2812 LED. Key API:
 
 `kit.update()` evaluates alerts every 1 s. Events are edge-triggered and dispatched via callbacks. Debounce: 20 s for no-signal alerts, 15 s for low/high threshold alerts.
 
-**Profiles:** `VITAL_PROFILE PROFILE_ADULT`, `PROFILE_CHILD`, or `PROFILE_TODDLER` in `config.h`. `main.cpp` maps this to `mmWaveKit::ADULT` / `mmWaveKit::CHILD` / `mmWaveKit::TODDLER` in `VitalConfig`.
+**Profiles:** `VITAL_PROFILE PROFILE_ADULT`, `PROFILE_CHILD`, or `PROFILE_TODDLER` in `config.h`. `main.cpp` maps this to `mmWaveKit::ADULT` / `mmWaveKit::CHILD` / `mmWaveKit::TODDLER` in `VitalConfig`. Alert sensitivity order (most → least): ADULT (BR 10–20) → CHILD (BR 16–30) → TODDLER (BR 16–45). A narrower normal range fires alerts at smaller deviations — ADULT is the most sensitive profile.
 
 **Pushover:** `pushoverHandler()` queues into globals; send happens in `loopPushover()` to avoid blocking sensor reads. Boot sends "mmWave Online" + IP if `ALERT_NOTIFY_ONLINE 1`. Every notification includes `url=http://DEVICE_NAME.local` ("Open Dashboard"). Notification gates (`ALERT_NOTIFY_BREATHING`, `ALERT_NOTIFY_HEART_RATE`, etc.) in `config.h`.
 
