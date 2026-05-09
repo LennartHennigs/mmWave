@@ -254,7 +254,6 @@ static char _poMsg[80];
 static int  _poPriority = 0;
 
 static void pushoverHandler(mmWaveKit::Event e, int value) {
-  if (!shouldNotify(e)) return;
   const EventMeta* meta = findEventMeta(e);
   if (!meta) return;
   if (_poPending && meta->priority <= _poPriority) return;
@@ -271,7 +270,6 @@ static void pushoverHandler(mmWaveKit::Event e, int value) {
 #if ENABLE_MQTT
 static void mqttAlertHandler(mmWaveKit::Event e, int value) {
   if (!mqttClient.connected()) return;
-  if (!shouldNotify(e)) return;
   const EventMeta* meta = findEventMeta(e);
   if (!meta) return;
   char topic[64], payload[64];
@@ -287,6 +285,7 @@ static void mqttAlertHandler(mmWaveKit::Event e, int value) {
 ///////////////////////////////////////////////////////////////////////////////
 #if ENABLE_PUSHOVER || ENABLE_MQTT
 static void onAlertEvent(mmWaveKit&, mmWaveKit::Event e, int v) {
+  if (!shouldNotify(e)) return;
   #if ENABLE_PUSHOVER
     pushoverHandler(e, v);
   #endif

@@ -22,8 +22,7 @@ int Pushover::send(const char* title, const char* message, int priority,
   HTTPClient http;
   if (!http.begin(client, PO_URL)) return -1;
   http.addHeader("Content-Type", "application/json");
-  // NOTE: title, message, url, urlTitle must not contain '"' or '\\'.
-  // All values produced by this firmware are plain ASCII, so raw JSON embedding is safe.
+  // Safe: all firmware-generated strings are plain ASCII (no '"' or '\').
   char body[512];
   int len = snprintf(body, sizeof(body),
                      "{\"token\":\"%s\",\"user\":\"%s\","
