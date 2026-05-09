@@ -18,6 +18,7 @@ static HardwareSerial    _serial(0);
 static SEEED_MR60BHA2    _mmwave;
 
 const mmWaveKit::VitalProfile mmWaveKit::ADULT   = { 10, 20, 3.0f,  40, 100 };
+const mmWaveKit::VitalProfile mmWaveKit::CHILD   = { 16, 30, 4.0f,  60, 120 };
 const mmWaveKit::VitalProfile mmWaveKit::TODDLER = { 16, 45, 5.0f,  60, 160 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -21,6 +21,7 @@
 #ifndef PROFILE_ADULT
   #define PROFILE_ADULT   0
   #define PROFILE_TODDLER 1
+  #define PROFILE_CHILD   2
 #endif
 
 
@@ -33,8 +34,9 @@ public:
     float brIrregStddev;      // rpm std-dev threshold for irregular breathing
     int   hrLow, hrHigh;      // bpm thresholds
   };
-  static const VitalProfile ADULT;    // BR 10-20 rpm, HR 40-100 bpm
-  static const VitalProfile TODDLER;  // BR 16-45 rpm, HR 60-160 bpm
+  static const VitalProfile ADULT;    // BR 10-20 rpm,  HR  40-100 bpm
+  static const VitalProfile CHILD;    // BR 16-30 rpm,  HR  60-120 bpm  (3-12 yr)
+  static const VitalProfile TODDLER;  // BR 16-45 rpm,  HR  60-160 bpm  (1-3 yr)
 
   // ── Config structs (passed once to begin()) ───────────────────────────
   // VitalConfig: person — vital sign thresholds + debounce timings

@@ -47,7 +47,7 @@ Wraps `SEEED_MR60BHA2` sensor, `BH1750` light sensor, and WS2812 LED. Key API:
 
 `kit.update()` evaluates alerts every 1 s. Events are edge-triggered and dispatched via callbacks. Debounce: 20 s for no-signal alerts, 15 s for low/high threshold alerts.
 
-**Profiles:** `VITAL_PROFILE PROFILE_ADULT` or `PROFILE_TODDLER` in `config.h`. `main.cpp` maps this to `mmWaveKit::ADULT` / `mmWaveKit::TODDLER` in `VitalConfig`.
+**Profiles:** `VITAL_PROFILE PROFILE_ADULT`, `PROFILE_CHILD`, or `PROFILE_TODDLER` in `config.h`. `main.cpp` maps this to `mmWaveKit::ADULT` / `mmWaveKit::CHILD` / `mmWaveKit::TODDLER` in `VitalConfig`.
 
 **Pushover:** `pushoverHandler()` queues into globals; send happens in `loopPushover()` to avoid blocking sensor reads. Boot sends "mmWave Online" + IP if `ALERT_NOTIFY_ONLINE 1`. Every notification includes `url=http://DEVICE_NAME.local` ("Open Dashboard"). Notification gates (`ALERT_NOTIFY_BREATHING`, `ALERT_NOTIFY_HEART_RATE`, etc.) in `config.h`.
 

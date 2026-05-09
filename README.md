@@ -46,12 +46,19 @@ Requires the device to be reachable at `mmwave.local`.
 
 The firmware monitors breathing rate and heart rate against sleep-tuned thresholds and fires edge-triggered events. Two profiles are available (selected at compile time via `VITAL_PROFILE` in `config.h`):
 
-| Profile           | Breathing rate | Heart rate  |
-| ----------------- | -------------- | ----------- |
-| `PROFILE_ADULT`   | 10–20 rpm      | 40–100 bpm  |
-| `PROFILE_TODDLER` | 16–45 rpm      | 60–160 bpm  |
+| Profile           | Age      | Breathing rate | Heart rate  |
+| ----------------- | -------- | -------------- | ----------- |
+| `PROFILE_ADULT`   | 18+ yr   | 10–20 rpm      | 40–100 bpm  |
+| `PROFILE_CHILD`   | 3–12 yr  | 16–30 rpm      | 60–120 bpm  |
+| `PROFILE_TODDLER` | 1–3 yr   | 16–45 rpm      | 60–160 bpm  |
 
 Alert events: `no_breathing`, `low_breathing`, `high_breathing`, `irregular_breathing`, `no_heart_rate`, `low_heart_rate`, `high_heart_rate`, `presence_on`, `presence_off`.
+
+Thresholds are based on published reference ranges for sleeping vital signs:
+
+- **Adult** — Quer et al. (2020): [Inter- and intraindividual variability in daily resting heart rate](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0227709), *PLoS ONE* — mean RHR 65 bpm, 95% range 50–82 bpm across 92,457 adults; bounds widened to 40–100 bpm to cover trained athletes and age-related variation during sleep
+- **Toddler (1–3 yr)** — Fleming et al. (2011): [Normal ranges of heart rate and respiratory rate in children from birth to 18 years](https://pmc.ncbi.nlm.nih.gov/articles/PMC3789232/), *The Lancet* — RR median 26–36 rpm, HR median 100–113 bpm; bounds set wider to account for sleep-stage variation
+- **Child (3–12 yr) / `PROFILE_CHILD`** — Fleming et al. (2011) (same): RR median 20–26 rpm, HR median 80–100 bpm
 
 Notification gates in `config.h` let you silence individual categories:
 

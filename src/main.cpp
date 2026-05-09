@@ -60,7 +60,9 @@ static void logPrint(const char* fmt, ...) {
 #define LOG(fmt, ...) logPrint("[DBG] " fmt "\n", ##__VA_ARGS__)
 
 static mmWaveKit kit;
-static const char* const profileName = VITAL_PROFILE == PROFILE_TODDLER ? "toddler" : "adult";
+static const char* const profileName = VITAL_PROFILE == PROFILE_TODDLER ? "toddler"
+                                     : VITAL_PROFILE == PROFILE_CHILD   ? "child"
+                                     : "adult";
 
 #if ENABLE_WEBSERVER
 AsyncWebServer  server(80);
@@ -267,7 +269,9 @@ static void mqttAlertHandler(mmWaveKit::Event e, int value) {
 
 void setupSensor() {
   mmWaveKit::VitalConfig vc;
-  vc.profile = VITAL_PROFILE == PROFILE_TODDLER ? mmWaveKit::TODDLER : mmWaveKit::ADULT;
+  vc.profile = VITAL_PROFILE == PROFILE_TODDLER ? mmWaveKit::TODDLER
+             : VITAL_PROFILE == PROFILE_CHILD   ? mmWaveKit::CHILD
+             : mmWaveKit::ADULT;
 
 #if ENABLE_PUSHOVER || ENABLE_MQTT
   kit.onEvent([](mmWaveKit&, mmWaveKit::Event e, int v) {
