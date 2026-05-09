@@ -13,7 +13,8 @@
 #include <Adafruit_NeoPixel.h>
 
 static BH1750            _bh;
-static Adafruit_NeoPixel _led(1, 1 /*D1*/, NEO_GRB + NEO_KHZ800);
+// Pin overridden at begin() via _led.updatePin(lc.ledPin); 1 is the boot default.
+static Adafruit_NeoPixel _led(1, 1, NEO_GRB + NEO_KHZ800);
 static HardwareSerial    _serial(0);
 static SEEED_MR60BHA2    _mmwave;
 
@@ -30,7 +31,6 @@ bool mmWaveKit::begin(HardwareSerial& serial,
                       const VitalConfig& vc, const LightConfig& lc) {
   _vitalCfg = vc;
   _lightCfg = lc;
-  if (!_vitalCfg.profile.brHigh) _vitalCfg.profile = ADULT;
 
   _mmwave.begin(&serial);
   _requestFirmwareVersion();
@@ -38,6 +38,7 @@ bool mmWaveKit::begin(HardwareSerial& serial,
   Wire.begin();
   bool ok = _bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
 
+  _led.updatePin(_lightCfg.ledPin);
   _led.begin();
   _led.setBrightness(40);
   _led.clear();
@@ -67,6 +68,8 @@ bool mmWaveKit::getFirmwareVersion(char* buf, size_t len) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 void mmWaveKit::update() {
+  _br = 0.0f;
+  _hr = 0.0f;
   bool anyDetected = false;
   while (_mmwave.update(0)) {
     float dist;
@@ -128,6 +131,11 @@ void mmWaveKit::_fire(Event e, int value) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+void mmWaveKit::_fireEdge(bool cur, bool prev, Event e, int val) {
+  if (cur != prev) _fire(e, val);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 void mmWaveKit::_debounce(bool cond, unsigned long now, unsigned long& since,
                           uint32_t ms, bool& flag) {
   if (cond) {
@@ -150,19 +158,43 @@ float mmWaveKit::_brStddev() {
     float d = _brWindow[i] - mean;
     var += d * d;
   }
-  return sqrtf(var / _brWindowFill);
+  return sqrtf(var / (float)(_brWindowFill - 1));  // sample stddev (Bessel's correction)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-void mmWaveKit::_evalVitals(unsigned long now) {
-  const VitalProfile& p = _vitalCfg.profile;
-  const uint32_t      z = _vitalCfg.zeroDebounceMs;
-  const uint32_t      t = _vitalCfg.threshDebounceMs;
-
+void mmWaveKit::_evalPresence() {
   if (_presence != _prevPresence) {
     _fire(_presence ? EVT_PRESENCE_ON : EVT_PRESENCE_OFF, 0);
     _prevPresence = _presence;
   }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void mmWaveKit::_evalBreathing(unsigned long now) {
+  const VitalProfile& p = _vitalCfg.profile;
+  const int br = (int)_br;
+  _debounce(_br == 0.0f,                now, _zeroBreathSince, _vitalCfg.zeroDebounceMs,   _alerts.noBreathing);
+  _debounce(_br > 0.0f && br < p.brLow, now, _lowBreathSince,  _vitalCfg.threshDebounceMs, _alerts.lowBreathing);
+  _debounce(br > p.brHigh,              now, _highBreathSince, _vitalCfg.threshDebounceMs, _alerts.highBreathing);
+  _brWindow[_brWindowIdx] = _br;
+  _brWindowIdx = (_brWindowIdx + 1) % IRREG_WINDOW;
+  if (_brWindowFill < IRREG_WINDOW) _brWindowFill++;
+  if (_brWindowFill == IRREG_WINDOW)
+    _alerts.irregularBreathing = (_brStddev() > p.brIrregStddev);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void mmWaveKit::_evalHeartRate(unsigned long now) {
+  const VitalProfile& p = _vitalCfg.profile;
+  const int hr = (int)_hr;
+  _debounce(_hr == 0.0f,                now, _zeroHrSince, _vitalCfg.zeroDebounceMs,   _alerts.noHeartRate);
+  _debounce(_hr > 0.0f && hr < p.hrLow, now, _lowHrSince,  _vitalCfg.threshDebounceMs, _alerts.lowHeartRate);
+  _debounce(hr > p.hrHigh,              now, _highHrSince, _vitalCfg.threshDebounceMs, _alerts.highHeartRate);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void mmWaveKit::_evalVitals(unsigned long now) {
+  _evalPresence();
 
   if (!_presence) {
     _alerts = {};  _prevAlerts = {};
@@ -172,35 +204,19 @@ void mmWaveKit::_evalVitals(unsigned long now) {
     return;
   }
 
+  _evalBreathing(now);
+  _evalHeartRate(now);
+
   const int br = (int)_br;
   const int hr = (int)_hr;
 
-  _debounce(_br == 0.0f,               now, _zeroBreathSince, z, _alerts.noBreathing);
-  _debounce(_br > 0.0f && br < p.brLow, now, _lowBreathSince,  t, _alerts.lowBreathing);
-  _debounce(br > p.brHigh,             now, _highBreathSince, t, _alerts.highBreathing);
-
-  _brWindow[_brWindowIdx] = _br;
-  _brWindowIdx = (_brWindowIdx + 1) % IRREG_WINDOW;
-  if (_brWindowFill < IRREG_WINDOW) _brWindowFill++;
-  if (_brWindowFill == IRREG_WINDOW)
-    _alerts.irregularBreathing = (_brStddev() > p.brIrregStddev);
-
-  _debounce(_hr == 0.0f,               now, _zeroHrSince, z, _alerts.noHeartRate);
-  _debounce(_hr > 0.0f && hr < p.hrLow, now, _lowHrSince,  t, _alerts.lowHeartRate);
-  _debounce(hr > p.hrHigh,             now, _highHrSince, t, _alerts.highHeartRate);
-
-#define FIRE_EDGE(field, evt, val) \
-  if (_alerts.field != _prevAlerts.field) _fire(evt, val)
-
-  FIRE_EDGE(noBreathing,        EVT_NO_BREATHING,        br);
-  FIRE_EDGE(lowBreathing,       EVT_LOW_BREATHING,       br);
-  FIRE_EDGE(highBreathing,      EVT_HIGH_BREATHING,      br);
-  FIRE_EDGE(irregularBreathing, EVT_IRREGULAR_BREATHING, br);
-  FIRE_EDGE(noHeartRate,        EVT_NO_HEART_RATE,       hr);
-  FIRE_EDGE(lowHeartRate,       EVT_LOW_HEART_RATE,      hr);
-  FIRE_EDGE(highHeartRate,      EVT_HIGH_HEART_RATE,     hr);
-
-#undef FIRE_EDGE
+  _fireEdge(_alerts.noBreathing,        _prevAlerts.noBreathing,        EVT_NO_BREATHING,        br);
+  _fireEdge(_alerts.lowBreathing,       _prevAlerts.lowBreathing,       EVT_LOW_BREATHING,       br);
+  _fireEdge(_alerts.highBreathing,      _prevAlerts.highBreathing,      EVT_HIGH_BREATHING,      br);
+  _fireEdge(_alerts.irregularBreathing, _prevAlerts.irregularBreathing, EVT_IRREGULAR_BREATHING, br);
+  _fireEdge(_alerts.noHeartRate,        _prevAlerts.noHeartRate,        EVT_NO_HEART_RATE,       hr);
+  _fireEdge(_alerts.lowHeartRate,       _prevAlerts.lowHeartRate,       EVT_LOW_HEART_RATE,      hr);
+  _fireEdge(_alerts.highHeartRate,      _prevAlerts.highHeartRate,      EVT_HIGH_HEART_RATE,     hr);
 
   _prevAlerts = _alerts;
 }
@@ -214,7 +230,6 @@ void mmWaveKit::_evalLight() {
   }
 }
 
-///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 void mmWaveKit::setLedColor(uint8_t r, uint8_t g, uint8_t b) {
   _led.setPixelColor(0, _led.Color(r, g, b));
