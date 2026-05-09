@@ -13,7 +13,7 @@
 #include <Adafruit_NeoPixel.h>
 
 static BH1750            _bh;
-// Pin overridden at begin() via _led.updatePin(lc.ledPin); 1 is the boot default.
+// Pin overridden at begin() via _led.setPin(lc.ledPin); 1 is the boot default.
 static Adafruit_NeoPixel _led(1, 1, NEO_GRB + NEO_KHZ800);
 static HardwareSerial    _serial(0);
 static SEEED_MR60BHA2    _mmwave;
@@ -38,7 +38,7 @@ bool mmWaveKit::begin(HardwareSerial& serial,
   Wire.begin();
   bool ok = _bh.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
 
-  _led.updatePin(_lightCfg.ledPin);
+  _led.setPin(_lightCfg.ledPin);
   _led.begin();
   _led.setBrightness(40);
   _led.clear();
@@ -68,13 +68,15 @@ bool mmWaveKit::getFirmwareVersion(char* buf, size_t len) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 void mmWaveKit::update() {
-  _br = 0.0f;
-  _hr = 0.0f;
   bool anyDetected = false;
   while (_mmwave.update(0)) {
-    float dist;
+    // getBreathRate/getHeartRate are consume-once latches: they only update
+    // the value when a new frame of that type arrives, leaving it unchanged otherwise.
+    // Do not reset _br/_hr before the loop — BR/HR frames arrive less frequently
+    // than distance/presence frames, so most calls would otherwise see zero.
     _mmwave.getBreathRate(_br);
     _mmwave.getHeartRate(_hr);
+    float dist;
     if (_mmwave.getDistance(dist)) { _dist = dist; anyDetected = true; }
     if (_mmwave.isHumanDetected())  anyDetected = true;
     if (!_fwValid) {

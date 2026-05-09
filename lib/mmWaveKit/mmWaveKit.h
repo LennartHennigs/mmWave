@@ -42,7 +42,7 @@ public:
   // ── Config structs (passed once to begin()) ─────────────────────
   // VitalConfig: person — vital sign thresholds + debounce timings
   struct VitalConfig {
-    VitalProfile profile          = TODDLER; // fail-safe default: tightest thresholds
+    VitalProfile profile          = ADULT;   // default: narrowest thresholds, most sensitive alerts
     uint32_t     zeroDebounceMs   = 20000;
     uint32_t     threshDebounceMs = 15000;
   };

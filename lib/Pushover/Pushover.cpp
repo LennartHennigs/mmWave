@@ -32,8 +32,8 @@ int Pushover::send(const char* title, const char* message, int priority,
     len += snprintf(body + len, sizeof(body) - len, ",\"url\":\"%s\"", url);
   if (urlTitle && urlTitle[0] && len < (int)sizeof(body) - 1)
     len += snprintf(body + len, sizeof(body) - len, ",\"url_title\":\"%s\"", urlTitle);
-  if (len < (int)sizeof(body) - 1)
-    snprintf(body + len, sizeof(body) - len, "}");
+  if (len >= (int)sizeof(body) - 1) { http.end(); return -2; }  // truncated — don't send invalid JSON
+  snprintf(body + len, sizeof(body) - len, "}");
   int code = http.POST(body);
   http.end();
   return code;
